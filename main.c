@@ -1,11 +1,18 @@
 #include "game.h"
+#include "network.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 int main(int argc, char *argv[]) {
   srand(time(NULL));
+
+  if (argc > 1 && strcmp(argv[1], "bench") == 0) {
+    network_benchmark();
+    return 0;
+  }
 
   struct Game *g = game_new();
   game_print(g);
@@ -35,6 +42,17 @@ int main(int argc, char *argv[]) {
         alive++;
   } while (alive > 1);
 
+  free(g);
+  g                 = game_new();
+  struct Network *n = network_new();
+  struct Tensor   inputs;
+  tensor_init(&inputs, 1, 1, 1, NUM_INPUTS);
+
+  get_canonical(g, &inputs);
+  network_forward(n, &inputs, g);
+
+  tensor_free(&inputs);
+  network_free(n);
   free(g);
   return 0;
 }

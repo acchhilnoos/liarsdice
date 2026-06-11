@@ -1,4 +1,5 @@
 #include "game.h"
+#include "tensor.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@
 void roll(struct Game *g) {
   g->d1bid = (struct Bid){0};
   g->d2bid = (struct Bid){0};
+  g->turn  = 0;
   for (size_t i = 0; i < NUM_FACES; i++)
     g->total_dice[i] = 0;
 
@@ -58,6 +60,7 @@ void bid(struct Game *g, size_t c, size_t f) {
   do
     g->p = (g->p + 1) % NUM_PLAYERS;
   while (g->dice_left[g->p] == 0);
+  g->turn++;
 }
 
 void challenge(struct Game *g) {
@@ -76,6 +79,25 @@ void challenge(struct Game *g) {
   g->total_left--;
 
   roll(g);
+}
+
+void get_canonical(const struct Game *g, struct Tensor *t) {
+  t->buf[0] = g->d2bid.c;
+  t->buf[1] = g->d2bid.f;
+  t->buf[2] = g->d1bid.c;
+  t->buf[3] = g->d1bid.f;
+  t->buf[4] = g->turn;
+  for (size_t i = 0, j = 5; i < NUM_PLAYERS; i++)
+    if (i == g->p)
+      continue;
+    else
+      t->buf[j++] = g->dice_left[i];
+  t->buf[8]  = g->dice[g->p][0];
+  t->buf[9]  = g->dice[g->p][1];
+  t->buf[10] = g->dice[g->p][2];
+  t->buf[11] = g->dice[g->p][3];
+  t->buf[12] = g->dice[g->p][4];
+  t->buf[13] = g->dice[g->p][5];
 }
 
 void game_print(const struct Game *g) {
