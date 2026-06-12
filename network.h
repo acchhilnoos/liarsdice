@@ -14,13 +14,13 @@
  * opp 1-3 left    x3
  * hand 1-6s       x6
  */
-#define NUM_INPUTS 14
+#define NUM_INPUTS 15
 /*
  * [count: 1-20] x [face: 1-6] x120
  * challenge                   x1
  */
 #define NUM_OUTPUTS 121
-#define NUM_LAYERS 4
+#define NUM_LAYERS 5
 #define MAX_BATCH_SIZE 1
 
 struct Network {
@@ -40,7 +40,7 @@ void network_zero_grad(struct Network *n);
 void network_forward(struct Network *n, const struct Tensor *inputs,
                      const struct Game *g);
 void network_backward(struct Network *n, struct Tensor *inputs,
-                      const struct Tensor *loss);
+                      const struct Tensor *loss_p, const struct Tensor *loss_v);
 
 void network_sgd(struct Network *n, float alpha);
 

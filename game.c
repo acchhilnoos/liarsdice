@@ -63,8 +63,9 @@ void bid(struct Game *g, size_t c, size_t f) {
   g->turn++;
 }
 
-void challenge(struct Game *g) {
+bool challenge(struct Game *g) {
   UNREACHABLE(g->d1bid.c == 0 || g->d1bid.f == 0);
+  bool good = false;
 
   size_t sum = g->total_dice[g->d1bid.f - 1];
   if (g->d1bid.f != 1)
@@ -73,12 +74,17 @@ void challenge(struct Game *g) {
   if (sum >= g->d1bid.c) {
     g->dice_left[g->p]--;
   } else {
+    good = true;
     g->dice_left[g->d1bid.p]--;
     g->p = g->d1bid.p;
   }
+  while (g->dice_left[g->p] == 0)
+    g->p = (g->p + 1) % NUM_PLAYERS;
   g->total_left--;
 
   roll(g);
+
+  return good;
 }
 
 void get_canonical(const struct Game *g, struct Tensor *t) {
@@ -98,29 +104,28 @@ void get_canonical(const struct Game *g, struct Tensor *t) {
   t->buf[11] = g->dice[g->p][3];
   t->buf[12] = g->dice[g->p][4];
   t->buf[13] = g->dice[g->p][5];
+  t->buf[14] = g->dice_left[g->p];
 }
 
 void game_print(const struct Game *g) {
   for (size_t i = 0; i < NUM_PLAYERS; i++) {
     printf("player %zu: ", i + 1);
-    if (g->dice_left[i] != 0) {
-      for (size_t j = 0; j < NUM_FACES; j++) {
-        if (g->dice[i][j] != 0)
-          printf("  %zu", g->dice[i][j]);
-        else
-          printf("   ");
-      }
-      printf("  | %2zu\n", g->dice_left[i]);
-    } else {
-      printf("\n");
+    for (size_t j = 0; j < NUM_FACES; j++) {
+      if (g->dice[i][j] != 0)
+        printf("  %zu", g->dice[i][j]);
+      else
+        printf("   ");
     }
+    printf("  | %2zu\n", g->dice_left[i]);
   }
-  printf("  totals: ");
+  for (size_t i = 0; i < 34; i++)
+    printf("-");
+  printf("\n  totals: ");
   for (size_t i = 0; i < NUM_FACES; i++) {
     if (g->total_dice[i] != 0)
       printf("  %zu", g->total_dice[i]);
     else
       printf("   ");
   }
-  printf("  | %2zu\n", g->total_left);
+  printf("  | %2zu\n\n", g->total_left);
 }

@@ -26,7 +26,7 @@ struct Game *game_new(void);
 
 bool legal(const struct Game *g, size_t count, size_t face);
 void bid(struct Game *g, size_t count, size_t face);
-void challenge(struct Game *g);
+bool challenge(struct Game *g);
 
 void get_canonical(const struct Game *g, struct Tensor *t);
 

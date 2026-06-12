@@ -1,23 +1,17 @@
 CC := gcc
 TARGET := main
 
-SRCS := game.c main.c memory.c network.c tensor.c
+SRCS := game.c main.c network.c tensor.c
 OBJS := $(SRCS:.c=.o)
 DEPS := $(SRCS:.c=.d)
 
 CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O3
-DFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O0 -DDEBUG -g
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	@echo "Linking $@..."
 	@$(CC) $(CFLAGS) -o $@ $^
-	@echo "Build complete: $@"
-
-debug: $(OBJS)
-	@echo "Linking $@..."
-	@$(CC) $(DFLAGS) -o $@ $^
 	@echo "Build complete: $@"
 
 %.o: %.c
@@ -33,4 +27,4 @@ clean:
 	@rm -rf *.dSYM
 	@echo "Clean complete"
 
-.PHONY: all clean debug run
+.PHONY: all clean run

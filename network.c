@@ -1,6 +1,7 @@
 #include "network.h"
 #include "game.h"
 #include "tensor.h"
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,28 +12,25 @@ struct Network *network_new(void) {
   struct Network *n = malloc(sizeof(*n));
 
   // kernels: [ky, kx, ic, oc]
-  tensor_init(&n->ks[0], 1, 1, NUM_INPUTS, 512);
-  tensor_init(&n->ks[1], 1, 1, 512, 512);
-  tensor_init(&n->ks[2], 1, 1, 512, 256);
+  tensor_init(&n->ks[0], 1, 1, NUM_INPUTS, 256);
+  tensor_init(&n->ks[1], 1, 1, 256, 256);
+  tensor_init(&n->ks[2], 1, 1, 256, 256);
   tensor_init(&n->ks[3], 1, 1, 256, NUM_OUTPUTS);
-
-  // biases: [1, 1, 1, oc]
-  for (size_t i = 0; i < NUM_LAYERS; i++)
-    tensor_init(&n->bs[i], 1, 1, 1, n->ks[i].c);
-
-  // activations: [MAX_BATCH_SIZE, y, x, c]
-  tensor_init(&n->as[0], MAX_BATCH_SIZE, 1, 1, 512);
-  tensor_init(&n->as[1], MAX_BATCH_SIZE, 1, 1, 512);
-  tensor_init(&n->as[2], MAX_BATCH_SIZE, 1, 1, 256);
-  tensor_init(&n->as[3], MAX_BATCH_SIZE, 1, 1, NUM_OUTPUTS);
-
-  for (int i = 0; i < NUM_LAYERS; i++)
-    n->as[i].n = 1;
+  tensor_init(&n->ks[4], 1, 1, 256, 1);
 
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     struct Tensor *ks = &n->ks[i];
     struct Tensor *bs = &n->bs[i];
+    struct Tensor *as = &n->as[i];
 
+    // biases: [1, 1, 1, oc]
+    tensor_init(bs, 1, 1, 1, ks->c);
+
+    // activations: [MAX_BATCH_SIZE, y, x, c]
+    tensor_init(as, MAX_BATCH_SIZE, 1, 1, ks->c);
+    as->n = 1;
+
+    // momenta
     tensor_init(&n->m_ks[i], ks->n, ks->y, ks->x, ks->c);
     tensor_init(&n->m_bs[i], bs->n, bs->y, bs->x, bs->c);
 
@@ -81,19 +79,31 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
     for (size_t i = 0; i < 20; i++)
       for (size_t j = 0; j < 6; j++)
         if (!legal(g, i + 1, j + 1))
-          n->as[3].buf[b * 121 + i * 6 + j] = 0;
+          n->as[3].buf[b * 121 + i * 6 + j] = -FLT_MAX;
     if (g->d1bid.c == 0)
-      n->as[3].buf[b * 121 + 120] = 0;
+      n->as[3].buf[b * 121 + 120] = -FLT_MAX;
   }
+  tensor_softmax(&n->as[3]);
+
+  tensor_conv(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4], 0, 1);
+  tensor_tanh(&n->as[4]);
 }
 
 void network_backward(struct Network *n, struct Tensor *inputs,
-                      const struct Tensor *loss) {
+                      const struct Tensor *loss_p,
+                      const struct Tensor *loss_v) {
   for (size_t i = 0; i < NUM_LAYERS; i++)
     tensor_zero_grad(&n->as[i]);
 
-  memcpy(n->as[3].grad, loss->buf, tensor_size(loss) * sizeof(*loss->buf));
+  memcpy(n->as[4].grad, loss_v->buf,
+         tensor_size(loss_v) * sizeof(*loss_v->buf));
+  memcpy(n->as[3].grad, loss_p->buf,
+         tensor_size(loss_p) * sizeof(*loss_p->buf));
 
+  tensor_tanh_grad(&n->as[4]);
+  tensor_conv_grad(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4], 0, 1);
+
+  tensor_softmax_grad(&n->as[3]);
   tensor_conv_grad(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3], 0, 1);
 
   tensor_relu_grad(&n->as[2]);
@@ -152,22 +162,24 @@ void network_benchmark(void) {
   struct Network *n = network_new();
   struct Game    *g = game_new();
 
-  struct Tensor inputs, loss;
+  struct Tensor inputs, loss_p, loss_v;
   tensor_init(&inputs, 1, 1, 1, NUM_INPUTS);
-  tensor_init(&loss, 1, 1, 1, NUM_OUTPUTS);
+  tensor_init(&loss_p, 1, 1, 1, NUM_OUTPUTS);
+  tensor_init(&loss_v, 1, 1, 1, 1);
   get_canonical(g, &inputs);
-  for (size_t i = 0; i < tensor_size(&loss); i++)
-    loss.buf[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+  for (size_t i = 0; i < tensor_size(&loss_p); i++)
+    loss_p.buf[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+  loss_v.buf[0] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
 
   for (int i = 0; i < 100; i++) {
     network_forward(n, &inputs, g);
-    network_backward(n, &inputs, &loss);
+    network_backward(n, &inputs, &loss_p, &loss_v);
   }
 
   clock_t start = clock();
   for (int i = 0; i < 1000; i++) {
     network_forward(n, &inputs, g);
-    network_backward(n, &inputs, &loss);
+    network_backward(n, &inputs, &loss_p, &loss_v);
   }
   clock_t end = clock();
 
@@ -176,7 +188,8 @@ void network_benchmark(void) {
   printf("Average time per pass: %f ms\n", (time_spent / 1000.0) * 1000.0);
   printf("Estimated Evals per Second: %.2f\n\n", 1000.0 / time_spent);
 
-  tensor_free(&loss);
+  tensor_free(&loss_v);
+  tensor_free(&loss_p);
   tensor_free(&inputs);
   network_free(n);
   free(g);
