@@ -1,17 +1,7 @@
 #include "game.h"
 #include "tensor.h"
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#define UNREACHABLE(cond)                                                      \
-  do {                                                                         \
-    if (cond) {                                                                \
-      fprintf(stderr, "unreachable at %s:%d (%s)!", __FILE_NAME__, __LINE__,   \
-              __FUNCTION__);                                                   \
-      exit(1);                                                                 \
-    }                                                                          \
-  } while (0)
 
 void roll(struct Game *g) {
   g->d1bid = (struct Bid){0};
@@ -48,7 +38,7 @@ struct Game *game_new(void) {
 }
 
 bool legal(const struct Game *g, size_t c, size_t f) {
-  return c <= g->total_left &&
+  return c > 0 && c <= g->total_left &&
          (c > g->d1bid.c || (c == g->d1bid.c && f > g->d1bid.f));
 }
 
@@ -88,23 +78,23 @@ bool challenge(struct Game *g) {
 }
 
 void get_canonical(const struct Game *g, struct Tensor *t) {
-  t->buf[0] = g->d2bid.c;
-  t->buf[1] = g->d2bid.f;
-  t->buf[2] = g->d1bid.c;
-  t->buf[3] = g->d1bid.f;
-  t->buf[4] = g->turn;
-  for (size_t i = 0, j = 5; i < NUM_PLAYERS; i++)
+  t->buf[0] = (float)g->d2bid.c / g->total_left;
+  t->buf[1] = (float)g->d2bid.f / NUM_FACES;
+  t->buf[2] = (float)g->d1bid.c / g->total_left;
+  t->buf[3] = (float)g->d1bid.f / NUM_FACES;
+  t->buf[4] = (float)g->turn / (NUM_PLAYERS * 5);
+  for (size_t i = g->p, j = 5; j < 8; i++)
     if (i == g->p)
       continue;
     else
-      t->buf[j++] = g->dice_left[i];
-  t->buf[8]  = g->dice[g->p][0];
-  t->buf[9]  = g->dice[g->p][1];
-  t->buf[10] = g->dice[g->p][2];
-  t->buf[11] = g->dice[g->p][3];
-  t->buf[12] = g->dice[g->p][4];
-  t->buf[13] = g->dice[g->p][5];
-  t->buf[14] = g->dice_left[g->p];
+      t->buf[j++] = (float)g->dice_left[i % NUM_PLAYERS] / g->total_left;
+  t->buf[8]  = (float)g->dice[g->p][0] / g->dice_left[g->p];
+  t->buf[9]  = (float)g->dice[g->p][1] / g->dice_left[g->p];
+  t->buf[10] = (float)g->dice[g->p][2] / g->dice_left[g->p];
+  t->buf[11] = (float)g->dice[g->p][3] / g->dice_left[g->p];
+  t->buf[12] = (float)g->dice[g->p][4] / g->dice_left[g->p];
+  t->buf[13] = (float)g->dice[g->p][5] / g->dice_left[g->p];
+  t->buf[14] = (float)g->dice_left[g->p] / g->total_left;
 }
 
 void game_print(const struct Game *g) {
@@ -127,5 +117,5 @@ void game_print(const struct Game *g) {
     else
       printf("   ");
   }
-  printf("  | %2zu\n\n", g->total_left);
+  printf("  | %2zu\n", g->total_left);
 }

@@ -1,12 +1,9 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "config.h"
 #include "tensor.h"
 #include <stdbool.h>
-
-// WARN: MUST CHANGE WITH NUM_INPUTS,OUTPUTS IN network.h
-#define NUM_FACES 6
-#define NUM_PLAYERS 4
 
 struct Bid {
   size_t p, c, f;

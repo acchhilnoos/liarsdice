@@ -11,32 +11,24 @@
 struct Network *network_new(void) {
   struct Network *n = malloc(sizeof(*n));
 
-  // kernels: [ky, kx, ic, oc]
-  tensor_init(&n->ks[0], 1, 1, NUM_INPUTS, 256);
-  tensor_init(&n->ks[1], 1, 1, 256, 256);
-  tensor_init(&n->ks[2], 1, 1, 256, 256);
-  tensor_init(&n->ks[3], 1, 1, 256, NUM_OUTPUTS);
-  tensor_init(&n->ks[4], 1, 1, 256, 1);
+  tensor_init(&n->ks[0], NUM_INPUTS, 256);
+  tensor_init(&n->ks[1], 256, 256);
+  tensor_init(&n->ks[2], 256, 256);
+  tensor_init(&n->ks[3], 256, NUM_OUTPUTS);
+  tensor_init(&n->ks[4], 256, 1);
 
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     struct Tensor *ks = &n->ks[i];
     struct Tensor *bs = &n->bs[i];
     struct Tensor *as = &n->as[i];
 
-    // biases: [1, 1, 1, oc]
-    tensor_init(bs, 1, 1, 1, ks->c);
+    tensor_init(bs, 1, ks->x);
+    tensor_init(as, 1, ks->x);
 
-    // activations: [MAX_BATCH_SIZE, y, x, c]
-    tensor_init(as, 1, 1, 1, ks->c);
-    as->n = 1;
+    tensor_init(&n->m_ks[i], ks->y, ks->x);
+    tensor_init(&n->m_bs[i], bs->y, bs->x);
 
-    // momenta
-    tensor_init(&n->m_ks[i], ks->n, ks->y, ks->x, ks->c);
-    tensor_init(&n->m_bs[i], bs->n, bs->y, bs->x, bs->c);
-
-    float fan_in = (float)(ks->n * ks->y * ks->x);
-    float limit  = sqrtf(6.0f / (fan_in + ks->c));
-
+    float limit = sqrtf(6.0f / (ks->y + ks->x));
     for (size_t j = 0; j < tensor_size(&n->ks[i]); j++)
       ks->buf[j] = (((float)rand() / RAND_MAX) * 2.0f - 1.0f) * limit;
   }
@@ -65,27 +57,25 @@ void network_zero_grad(struct Network *n) {
 
 void network_forward(struct Network *n, const struct Tensor *inputs,
                      const struct Game *g) {
-  tensor_conv(inputs, &n->ks[0], &n->bs[0], &n->as[0], 0, 1);
+  tensor_fc(inputs, &n->ks[0], &n->bs[0], &n->as[0]);
   tensor_relu(&n->as[0]);
 
-  tensor_conv(&n->as[0], &n->ks[1], &n->bs[1], &n->as[1], 0, 1);
+  tensor_fc(&n->as[0], &n->ks[1], &n->bs[1], &n->as[1]);
   tensor_relu(&n->as[1]);
 
-  tensor_conv(&n->as[1], &n->ks[2], &n->bs[2], &n->as[2], 0, 1);
+  tensor_fc(&n->as[1], &n->ks[2], &n->bs[2], &n->as[2]);
   tensor_relu(&n->as[2]);
 
-  tensor_conv(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3], 0, 1);
-  for (size_t b = 0; b < n->as[3].n; b++) {
-    for (size_t i = 0; i < 20; i++)
-      for (size_t j = 0; j < 6; j++)
-        if (!legal(g, i + 1, j + 1))
-          n->as[3].buf[b * 121 + i * 6 + j] = -FLT_MAX;
-    if (g->d1bid.c == 0)
-      n->as[3].buf[b * 121 + 120] = -FLT_MAX;
-  }
+  tensor_fc(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3]);
+  for (size_t i = 0; i < NUM_PLAYERS * 5; i++)
+    for (size_t j = 0; j < NUM_FACES; j++)
+      if (!legal(g, i + 1, j + 1))
+        n->as[3].buf[i * NUM_FACES + j] = -FLT_MAX;
+  if (g->d1bid.c == 0)
+    n->as[3].buf[CHALLENGE_IDX] = -FLT_MAX;
   tensor_softmax(&n->as[3]);
 
-  tensor_conv(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4], 0, 1);
+  tensor_fc(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4]);
   tensor_tanh(&n->as[4]);
 }
 
@@ -99,19 +89,19 @@ void network_backward(struct Network *n, struct Tensor *inputs,
          tensor_size(loss_p) * sizeof(*loss_p->buf));
 
   tensor_tanh_grad(&n->as[4]);
-  tensor_conv_grad(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4], 0, 1);
+  tensor_fc_grad(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4]);
 
   tensor_softmax_grad(&n->as[3]);
-  tensor_conv_grad(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3], 0, 1);
+  tensor_fc_grad(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3]);
 
   tensor_relu_grad(&n->as[2]);
-  tensor_conv_grad(&n->as[1], &n->ks[2], &n->bs[2], &n->as[2], 0, 1);
+  tensor_fc_grad(&n->as[1], &n->ks[2], &n->bs[2], &n->as[2]);
 
   tensor_relu_grad(&n->as[1]);
-  tensor_conv_grad(&n->as[0], &n->ks[1], &n->bs[1], &n->as[1], 0, 1);
+  tensor_fc_grad(&n->as[0], &n->ks[1], &n->bs[1], &n->as[1]);
 
   tensor_relu_grad(&n->as[0]);
-  tensor_conv_grad(inputs, &n->ks[0], &n->bs[0], &n->as[0], 0, 1);
+  tensor_fc_grad(inputs, &n->ks[0], &n->bs[0], &n->as[0]);
 }
 
 void network_sgd(struct Network *n, float alpha, float beta) {
@@ -125,6 +115,65 @@ void network_sgd(struct Network *n, float alpha, float beta) {
       n->bs[i].buf[j] -= alpha * n->m_bs[i].buf[j];
     }
   }
+}
+
+void network_peek(const struct Network *n) {
+  const char *RED    = "\033[31m";
+  const char *YELLOW = "\033[33m";
+  const char *GREEN  = "\033[32m";
+  const char *DIM    = "\033[2m";
+  const char *BOLD   = "\033[1m";
+  const char *RESET  = "\033[0m";
+
+  float min_val = n->as[3].buf[0];
+  float max_val = n->as[3].buf[0];
+  for (size_t i = 0; i < NUM_OUTPUTS; i++) {
+    if (n->as[3].buf[i] < min_val)
+      min_val = n->as[3].buf[i];
+    if (n->as[3].buf[i] > max_val)
+      max_val = n->as[3].buf[i];
+  }
+
+  float range = max_val - min_val;
+
+  for (size_t i = 0; i < NUM_FACES; i++) {
+    for (size_t j = 0; j < NUM_PLAYERS * 5; j++) {
+      float       val = n->as[3].buf[j * NUM_FACES + i];
+      const char *color;
+      if (range > 1e-8f) {
+        float norm = (val - min_val) / range;
+        if (norm > 0.66f)
+          color = GREEN;
+        else if (norm > 0.33f)
+          color = YELLOW;
+        else if (norm > 0.01f)
+          color = RED;
+        else
+          color = DIM;
+      } else {
+        color = GREEN;
+      }
+      printf("%s%6.3f%s", color, val, RESET);
+    }
+    printf("\n");
+  }
+
+  float       doubt_val = n->as[3].buf[CHALLENGE_IDX];
+  const char *doubt_color;
+  if (range > 1e-8f) {
+    float norm = (doubt_val - min_val) / range;
+    if (norm > 0.66f)
+      doubt_color = GREEN;
+    else if (norm > 0.33f)
+      doubt_color = YELLOW;
+    else if (norm > 0.01f)
+      doubt_color = RED;
+    else
+      doubt_color = DIM;
+  } else {
+    doubt_color = GREEN;
+  }
+  printf("%s%6.3f %s(challenge)%s\n", doubt_color, doubt_val, BOLD, RESET);
 }
 
 void network_save(struct Network *n, const char *path) {
@@ -161,8 +210,8 @@ void network_benchmark(void) {
 
   struct Tensor inputs, loss_p;
   float         loss_v;
-  tensor_init(&inputs, 1, 1, 1, NUM_INPUTS);
-  tensor_init(&loss_p, 1, 1, 1, NUM_OUTPUTS);
+  tensor_init(&inputs, 1, NUM_INPUTS);
+  tensor_init(&loss_p, 1, NUM_OUTPUTS);
   get_canonical(g, &inputs);
   for (size_t i = 0; i < tensor_size(&loss_p); i++)
     loss_p.buf[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
