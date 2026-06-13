@@ -99,7 +99,7 @@ void tensor_softmax(struct Tensor *t) {
     }
 
     for (size_t i = 0; i < stride; i++)
-      buf[i] /= sum + 1e-8f;
+      buf[i] /= sum;
   }
 }
 

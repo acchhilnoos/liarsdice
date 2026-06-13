@@ -13,6 +13,7 @@
  * turn            x1
  * opp 1-3 left    x3
  * hand 1-6s       x6
+ * hand left       x1
  */
 #define NUM_INPUTS 15
 /*
@@ -21,7 +22,9 @@
  */
 #define NUM_OUTPUTS 121
 #define NUM_LAYERS 5
-#define MAX_BATCH_SIZE 1
+#define POL_HEAD 3
+#define VAL_HEAD 4
+#define MAX_BATCH_SIZE 64
 
 struct Network {
   struct Tensor ks[NUM_LAYERS];
@@ -40,9 +43,9 @@ void network_zero_grad(struct Network *n);
 void network_forward(struct Network *n, const struct Tensor *inputs,
                      const struct Game *g);
 void network_backward(struct Network *n, struct Tensor *inputs,
-                      const struct Tensor *loss_p, const struct Tensor *loss_v);
+                      const struct Tensor *loss_p, float loss_v);
 
-void network_sgd(struct Network *n, float alpha);
+void network_sgd(struct Network *n, float alpha, float beta);
 
 void network_save(struct Network *n, const char *path);
 void network_load(struct Network *n, const char *path);

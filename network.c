@@ -27,7 +27,7 @@ struct Network *network_new(void) {
     tensor_init(bs, 1, 1, 1, ks->c);
 
     // activations: [MAX_BATCH_SIZE, y, x, c]
-    tensor_init(as, MAX_BATCH_SIZE, 1, 1, ks->c);
+    tensor_init(as, 1, 1, 1, ks->c);
     as->n = 1;
 
     // momenta
@@ -90,13 +90,11 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
 }
 
 void network_backward(struct Network *n, struct Tensor *inputs,
-                      const struct Tensor *loss_p,
-                      const struct Tensor *loss_v) {
+                      const struct Tensor *loss_p, float loss_v) {
   for (size_t i = 0; i < NUM_LAYERS; i++)
     tensor_zero_grad(&n->as[i]);
 
-  memcpy(n->as[4].grad, loss_v->buf,
-         tensor_size(loss_v) * sizeof(*loss_v->buf));
+  n->as[4].grad[0] = loss_v;
   memcpy(n->as[3].grad, loss_p->buf,
          tensor_size(loss_p) * sizeof(*loss_p->buf));
 
@@ -116,15 +114,14 @@ void network_backward(struct Network *n, struct Tensor *inputs,
   tensor_conv_grad(inputs, &n->ks[0], &n->bs[0], &n->as[0], 0, 1);
 }
 
-void network_sgd(struct Network *n, float alpha) {
-  float m = 0.9f;
+void network_sgd(struct Network *n, float alpha, float beta) {
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     for (size_t j = 0; j < tensor_size(&n->ks[i]); j++) {
-      n->m_ks[i].buf[j] = m * n->m_ks[i].buf[j] + n->ks[i].grad[j];
+      n->m_ks[i].buf[j] = beta * n->m_ks[i].buf[j] + n->ks[i].grad[j];
       n->ks[i].buf[j] -= alpha * n->m_ks[i].buf[j];
     }
     for (size_t j = 0; j < tensor_size(&n->bs[i]); j++) {
-      n->m_bs[i].buf[j] = m * n->m_bs[i].buf[j] + n->bs[i].grad[j];
+      n->m_bs[i].buf[j] = beta * n->m_bs[i].buf[j] + n->bs[i].grad[j];
       n->bs[i].buf[j] -= alpha * n->m_bs[i].buf[j];
     }
   }
@@ -162,24 +159,24 @@ void network_benchmark(void) {
   struct Network *n = network_new();
   struct Game    *g = game_new();
 
-  struct Tensor inputs, loss_p, loss_v;
+  struct Tensor inputs, loss_p;
+  float         loss_v;
   tensor_init(&inputs, 1, 1, 1, NUM_INPUTS);
   tensor_init(&loss_p, 1, 1, 1, NUM_OUTPUTS);
-  tensor_init(&loss_v, 1, 1, 1, 1);
   get_canonical(g, &inputs);
   for (size_t i = 0; i < tensor_size(&loss_p); i++)
     loss_p.buf[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
-  loss_v.buf[0] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+  loss_v = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
 
   for (int i = 0; i < 100; i++) {
     network_forward(n, &inputs, g);
-    network_backward(n, &inputs, &loss_p, &loss_v);
+    network_backward(n, &inputs, &loss_p, loss_v);
   }
 
   clock_t start = clock();
   for (int i = 0; i < 1000; i++) {
     network_forward(n, &inputs, g);
-    network_backward(n, &inputs, &loss_p, &loss_v);
+    network_backward(n, &inputs, &loss_p, loss_v);
   }
   clock_t end = clock();
 
@@ -188,7 +185,6 @@ void network_benchmark(void) {
   printf("Average time per pass: %f ms\n", (time_spent / 1000.0) * 1000.0);
   printf("Estimated Evals per Second: %.2f\n\n", 1000.0 / time_spent);
 
-  tensor_free(&loss_v);
   tensor_free(&loss_p);
   tensor_free(&inputs);
   network_free(n);
