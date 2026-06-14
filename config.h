@@ -1,11 +1,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define UNREACHABLE(cond)                                                      \
+#define ASSERT_FALSE(cond)                                                     \
   do {                                                                         \
     if (cond) {                                                                \
-      fprintf(stderr, "unreachable at %s:%d (%s)!", __FILE_NAME__, __LINE__,   \
-              __FUNCTION__);                                                   \
+      fprintf(stderr, "assertion failed at %s:%d (%s)\n", __FILE_NAME__,       \
+              __LINE__, __FUNCTION__);                                         \
       exit(1);                                                                 \
     }                                                                          \
   } while (0)

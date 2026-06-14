@@ -38,14 +38,15 @@ void random_playout(void) {
   free(g);
 }
 
-void network_playout(struct Network *n) {
+void network_playout(struct Network *n, bool verbose) {
   struct Game  *g = game_new();
   struct Tensor inputs;
   tensor_init(&inputs, 1, NUM_INPUTS);
 
   size_t alive;
   do {
-    game_print(g);
+    if (verbose)
+      game_print(g);
 
     while (1) {
       size_t a = 0;
@@ -62,18 +63,21 @@ void network_playout(struct Network *n) {
           break;
         }
       }
-      network_peek(n);
+      if (verbose)
+        network_peek(n);
       if (a == CHALLENGE_IDX) {
         challenge(g);
         break;
       } else {
         size_t p = g->p;
         bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
-        printf("(%zu,%2zu,%zu)\n", p + 1, (a / NUM_FACES) + 1,
-               (a % NUM_FACES) + 1);
+        if (verbose)
+          printf("(%zu,%2zu,%zu)\n", p + 1, (a / NUM_FACES) + 1,
+                 (a % NUM_FACES) + 1);
       }
     }
-    printf("\n");
+    if (verbose)
+      printf("\n");
 
     alive = 0;
     for (size_t i = 0; i < NUM_PLAYERS; i++)
@@ -87,39 +91,22 @@ void network_playout(struct Network *n) {
 
 int main(int argc, char *argv[]) {
   srand(time(NULL));
-  size_t max_iters = 1000;
-  size_t max_steps = 200;
-  size_t max_epchs = 10;
-  float  alpha     = 0.01f;
-  float  beta      = 0.9f;
-  float  epsilon   = 0.2f;
-  float  gamma     = 0.95f;
-  float  lambda    = 0.99f;
-  float  c1        = 1.0f;
-  float  c2        = 0.1f;
+  char  *weights_fn = "weights.bin";
+  size_t max_iters  = 10000;
+  size_t max_steps  = 2048;
+  size_t max_epchs  = 15;
+  bool   verbose    = false;
+  float  alpha      = 0.01f;
+  float  beta       = 0.9f;
+  float  epsilon    = 0.2f;
+  float  gamma      = 0.95f;
+  float  lambda     = 0.99f;
+  float  c1         = 1.0f;
+  float  c2         = 0.1f;
   gamma *= gamma;
   gamma *= gamma;
   lambda *= lambda;
   lambda *= lambda;
-
-  for (int i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "bench") == 0) {
-      network_benchmark();
-      return 0;
-    }
-    if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--random") == 0) {
-      random_playout();
-      return 0;
-    }
-    if (strcmp(argv[i], "-e") == 0)
-      max_epchs = atoi(argv[++i]);
-    if (strcmp(argv[i], "-i") == 0)
-      max_iters = atoi(argv[++i]);
-    if (strcmp(argv[i], "-s") == 0)
-      max_steps = atoi(argv[++i]);
-  }
-
-  /* --- --- */
 
   struct Game    *g = game_new();
   struct Network *n = network_new();
@@ -143,6 +130,37 @@ int main(int argc, char *argv[]) {
   float  *as   = calloc(max_steps, sizeof(*as));
   float  *rs   = calloc(max_steps, sizeof(*rs));
   size_t *idxs = calloc(max_steps, sizeof(*idxs));
+
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-e") == 0)
+      max_epchs = atoi(argv[++i]);
+    else if (strcmp(argv[i], "-i") == 0)
+      max_iters = atoi(argv[++i]);
+    else if (strcmp(argv[i], "-s") == 0)
+      max_steps = atoi(argv[++i]);
+    else if (strcmp(argv[i], "-v") == 0)
+      verbose = true;
+    else if (strcmp(argv[i], "-l") == 0) {
+      if (argc > i + 1)
+        weights_fn = argv[++i];
+      network_load(n, weights_fn);
+    }
+  }
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "bench") == 0) {
+      network_benchmark();
+      goto free;
+    } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--random") == 0) {
+      random_playout();
+      goto free;
+    } else if (strcmp(argv[i], "-p") == 0 ||
+               strcmp(argv[i], "--playout") == 0) {
+      network_playout(n, true);
+      goto free;
+    }
+  }
+
+  /* --- --- */
 
   for (size_t iter = 0; iter < max_iters; iter++) {
     step_n = 0;
@@ -178,14 +196,20 @@ int main(int argc, char *argv[]) {
           if (challenge(g))
             step->r = 0.5f;
           else
-            step->r = -0.5f;
+            step->r = -0.2f;
         else
           bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
 
         step_n++;
       } else {
         if (a == CHALLENGE_IDX)
-          challenge(g);
+          if (g->d1bid.p == 0)
+            if (challenge(g))
+              step_buf[step_n - 1].r = -0.5;
+            else
+              step_buf[step_n - 1].r = 0.2;
+          else
+            challenge(g);
         else
           bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
       }
@@ -197,9 +221,9 @@ int main(int argc, char *argv[]) {
       if (alive == 1) {
         step_buf[step_n - 1].terminal = true;
         if (g->dice_left[0] != 0)
-          step_buf[step_n - 1].r = 1.0f;
+          step_buf[step_n - 1].r += 1.0f;
         else
-          step_buf[step_n - 1].r = -1.0f;
+          step_buf[step_n - 1].r += -1.0f;
         free(g);
         g = game_new();
       }
@@ -244,10 +268,10 @@ int main(int argc, char *argv[]) {
 
     for (size_t epch = 0; epch < max_epchs; epch++) {
       for (size_t i = 1; i < max_steps; i++) {
-        size_t r = rand() % (i + 1);
-        size_t t = idxs[i];
-        idxs[i]  = idxs[r];
-        idxs[r]  = t;
+        size_t x = rand() % (i + 1);
+        size_t y = idxs[i];
+        idxs[i]  = idxs[x];
+        idxs[x]  = y;
       }
 
       for (size_t batch = 0; batch < max_steps; batch += MAX_BATCH_SIZE) {
@@ -286,10 +310,14 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    if (iter % 50 == 0)
-      network_playout(n);
+    if (iter % 500 == 0) {
+      network_playout(n, verbose);
+      network_save(n, weights_fn);
+      printf("iteration %zu complete\n", iter);
+    }
   }
 
+free:
   free(idxs);
   free(rs);
   free(as);

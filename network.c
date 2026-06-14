@@ -11,11 +11,11 @@
 struct Network *network_new(void) {
   struct Network *n = malloc(sizeof(*n));
 
-  tensor_init(&n->ks[0], NUM_INPUTS, 256);
-  tensor_init(&n->ks[1], 256, 256);
-  tensor_init(&n->ks[2], 256, 256);
-  tensor_init(&n->ks[3], 256, NUM_OUTPUTS);
-  tensor_init(&n->ks[4], 256, 1);
+  tensor_init(&n->ks[0], NUM_INPUTS, 128);
+  tensor_init(&n->ks[1], 128, 128);
+  tensor_init(&n->ks[2], 128, 128);
+  tensor_init(&n->ks[3], 128, NUM_OUTPUTS);
+  tensor_init(&n->ks[4], 128, 1);
 
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     struct Tensor *ks = &n->ks[i];
@@ -76,7 +76,7 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
   tensor_softmax(&n->as[3]);
 
   tensor_fc(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4]);
-  tensor_tanh(&n->as[4]);
+  // tensor_tanh(&n->as[4]);
 }
 
 void network_backward(struct Network *n, struct Tensor *inputs,
@@ -88,7 +88,7 @@ void network_backward(struct Network *n, struct Tensor *inputs,
   memcpy(n->as[3].grad, loss_p->buf,
          tensor_size(loss_p) * sizeof(*loss_p->buf));
 
-  tensor_tanh_grad(&n->as[4]);
+  // tensor_tanh_grad(&n->as[4]);
   tensor_fc_grad(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4]);
 
   tensor_softmax_grad(&n->as[3]);

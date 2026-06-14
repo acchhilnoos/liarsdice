@@ -1,5 +1,7 @@
 #include "game.h"
+#include "config.h"
 #include "tensor.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -43,7 +45,19 @@ bool legal(const struct Game *g, size_t c, size_t f) {
 }
 
 void bid(struct Game *g, size_t c, size_t f) {
-  UNREACHABLE(!legal(g, c, f));
+  bool l = legal(g, c, f);
+  if (!l) {
+    printf("illegal bid %zu %zu\n", c, f);
+    printf("last bid %zu %zu\n", g->d1bid.c, g->d1bid.f);
+    printf("dice:\n");
+    for (size_t i = 0; i < NUM_PLAYERS; i++) {
+      for (size_t j = 0; j < NUM_FACES; j++) {
+        printf("%3zu", g->dice[i][j]);
+      }
+      printf("\n");
+    }
+  }
+  ASSERT_FALSE(!l);
 
   g->d2bid = g->d1bid;
   g->d1bid = (struct Bid){.p = g->p, .c = c, .f = f};
@@ -54,7 +68,7 @@ void bid(struct Game *g, size_t c, size_t f) {
 }
 
 bool challenge(struct Game *g) {
-  UNREACHABLE(g->d1bid.c == 0 || g->d1bid.f == 0);
+  ASSERT_FALSE(g->d1bid.c == 0 || g->d1bid.f == 0);
   bool good = false;
 
   size_t sum = g->total_dice[g->d1bid.f - 1];
