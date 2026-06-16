@@ -27,11 +27,12 @@
  * action space x5P*F
  * challenge    x1
  */
-#define NUM_OUTPUTS (NUM_LEGAL_BIDS + 1)
-#define CHALLENGE_IDX (NUM_OUTPUTS - 1)
-#define NUM_LAYERS 5
-#define POL_HEAD (NUM_LAYERS - 2)
-#define VAL_HEAD (NUM_LAYERS - 1)
+#define NUM_POL_OUT (NUM_LEGAL_BIDS + 1)
+#define CHALLENGE_IDX (NUM_POL_OUT - 1)
+#define NUM_LAYERS 8
+#define POL_HEAD (NUM_LAYERS - 5)
+#define VAL_HEAD (NUM_LAYERS - 3)
+#define CRT_HEAD (NUM_LAYERS - 1)
 #define MAX_BATCH_SIZE 64
 
 #endif

@@ -1,9 +1,9 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
+#include "config.h"
 #include "game.h"
 #include "tensor.h"
-#include "config.h"
 
 struct Network {
   struct Tensor ks[NUM_LAYERS];
@@ -22,7 +22,8 @@ void network_zero_grad(struct Network *n);
 void network_forward(struct Network *n, const struct Tensor *inputs,
                      const struct Game *g);
 void network_backward(struct Network *n, struct Tensor *inputs,
-                      const struct Tensor *loss_p, float loss_v);
+                      const struct Tensor *loss_p, float loss_v,
+                      const struct Tensor *loss_c);
 
 void network_sgd(struct Network *n, float alpha, float beta);
 

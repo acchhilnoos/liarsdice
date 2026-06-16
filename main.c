@@ -26,7 +26,7 @@ void network_playout(struct Network *n, bool verbose) {
 
       float r = (float)rand() / (RAND_MAX + 1.0f);
       float s = 0.0f;
-      for (size_t i = 0; i < NUM_OUTPUTS; i++) {
+      for (size_t i = 0; i < NUM_POL_OUT; i++) {
         s += n->as[POL_HEAD].buf[i];
         if (s > r) {
           a = i;
@@ -73,6 +73,7 @@ int main(int argc, char *argv[]) {
   float  lambda     = 0.99f;
   float  c1         = 1.0f;
   float  c2         = 0.1f;
+  float  c3         = 0.1f;
   gamma *= gamma;
   gamma *= gamma;
   lambda *= lambda;
@@ -82,11 +83,14 @@ int main(int argc, char *argv[]) {
   struct Network *n = network_new();
   struct Tensor   inputs;
   struct Tensor   loss_p;
+  struct Tensor   loss_c;
   tensor_init(&inputs, 1, NUM_INPUTS);
-  tensor_init(&loss_p, 1, NUM_OUTPUTS);
+  tensor_init(&loss_p, 1, NUM_POL_OUT);
+  tensor_init(&loss_c, 1, NUM_FACES);
 
   struct Step {
-    float  state[NUM_INPUTS];
+    float  in[NUM_INPUTS];
+    size_t d[NUM_FACES];
     size_t a;
     float  r;
     float  v;
@@ -135,7 +139,7 @@ int main(int argc, char *argv[]) {
       network_forward(n, &inputs, g);
 
       float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
-      for (size_t i = 0; i < NUM_OUTPUTS; i++) {
+      for (size_t i = 0; i < NUM_POL_OUT; i++) {
         s += n->as[POL_HEAD].buf[i];
         if (s > r) {
           a = i;
@@ -145,7 +149,8 @@ int main(int argc, char *argv[]) {
 
       if (g->p == 0) {
         struct Step *step = &step_buf[step_n];
-        memcpy(&step->state, inputs.buf, tensor_size(&inputs) * sizeof(float));
+        memcpy(&step->in, inputs.buf, tensor_size(&inputs) * sizeof(float));
+        memcpy(&step->d, g->game_counts, sizeof(g->game_counts));
         step->a        = a;
         step->r        = 0.0f;
         step->v        = n->as[VAL_HEAD].buf[0];
@@ -254,15 +259,14 @@ int main(int argc, char *argv[]) {
           size_t       idx  = idxs[batch + i];
           struct Step *step = &step_buf[idx];
 
-          g_temp.game_rem = (size_t)(step->state[NUM_FACES + NUM_PLAYERS + 2] *
+          g_temp.game_rem = (size_t)(step->in[NUM_FACES + NUM_PLAYERS + 2] *
                                          (NUM_PLAYERS * 5) +
                                      0.5f);
           g_temp.last.c =
-              (size_t)(step->state[NUM_FACES] * g_temp.game_rem + 0.5f);
-          g_temp.last.f =
-              (size_t)(step->state[NUM_FACES + 1] * NUM_FACES + 0.5f);
+              (size_t)(step->in[NUM_FACES] * g_temp.game_rem + 0.5f);
+          g_temp.last.f = (size_t)(step->in[NUM_FACES + 1] * NUM_FACES + 0.5f);
 
-          memcpy(inputs.buf, step->state, sizeof(step->state));
+          memcpy(inputs.buf, step->in, sizeof(step->in));
           network_forward(n, &inputs, &g_temp);
 
           float pi_old = step->pi;
@@ -282,14 +286,20 @@ int main(int argc, char *argv[]) {
           float dl_vf = (n->as[VAL_HEAD].buf[0] - vs[idx]);
 
           tensor_zero(&loss_p);
+          tensor_zero(&loss_c);
 
           /* S = -sum plogp */
-          for (size_t j = 0; j < NUM_OUTPUTS; j++)
+          for (size_t j = 0; j < NUM_POL_OUT; j++)
             loss_p.buf[j] =
                 c2 * (logf(fmaxf(n->as[POL_HEAD].buf[j], 1e-10f)) + 1);
           loss_p.buf[step->a] += dl_clip;
 
-          network_backward(n, &inputs, &loss_p, c1 * dl_vf);
+          /* L_crit = (c(s) - c_true(s))^2 */
+          for (size_t j = 0; j < NUM_FACES; j++)
+            loss_c.buf[j] = c3 * (n->as[CRT_HEAD].buf[j] -
+                                  ((float)step->d[j] / g_temp.game_rem));
+
+          network_backward(n, &inputs, &loss_p, c1 * dl_vf, &loss_c);
         }
         network_sgd(n, alpha / MAX_BATCH_SIZE, beta);
       }
@@ -307,6 +317,7 @@ free:
   free(vs);
   free(as);
   free(step_buf);
+  tensor_free(&loss_c);
   tensor_free(&loss_p);
   tensor_free(&inputs);
   network_free(n);
