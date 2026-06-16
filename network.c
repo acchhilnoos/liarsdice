@@ -71,7 +71,7 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
     for (size_t j = 0; j < NUM_FACES; j++)
       if (!legal(g, i + 1, j + 1))
         n->as[3].buf[i * NUM_FACES + j] = -FLT_MAX;
-  if (g->d1bid.c == 0)
+  if (g->last.c == 0)
     n->as[3].buf[CHALLENGE_IDX] = -FLT_MAX;
   tensor_softmax(&n->as[3]);
 

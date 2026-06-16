@@ -8,36 +8,6 @@
 #include <string.h>
 #include <time.h>
 
-void random_playout(void) {
-  struct Game *g = game_new();
-
-  size_t alive;
-  do {
-    while (1) {
-      size_t c, f;
-
-      if (g->d1bid.c == g->total_left) {
-        challenge(g);
-        break;
-      }
-
-      do {
-        c = rand() % (g->total_left - g->d1bid.c) + g->d1bid.c + 1;
-        f = rand() % NUM_FACES + 1;
-      } while (!legal(g, c, f));
-
-      bid(g, c, f);
-    }
-
-    alive = 0;
-    for (size_t i = 0; i < NUM_PLAYERS; i++)
-      if (g->dice_left[i] != 0)
-        alive++;
-  } while (alive > 1);
-
-  free(g);
-}
-
 void network_playout(struct Network *n, bool verbose) {
   struct Game  *g = game_new();
   struct Tensor inputs;
@@ -81,7 +51,7 @@ void network_playout(struct Network *n, bool verbose) {
 
     alive = 0;
     for (size_t i = 0; i < NUM_PLAYERS; i++)
-      if (g->dice_left[i] != 0)
+      if (g->player_rem[i] != 0)
         alive++;
   } while (alive > 1);
 
@@ -96,7 +66,7 @@ int main(int argc, char *argv[]) {
   size_t max_steps  = 2048;
   size_t max_epchs  = 15;
   bool   verbose    = false;
-  float  alpha      = 0.01f;
+  float  alpha      = 0.005f;
   float  beta       = 0.9f;
   float  epsilon    = 0.2f;
   float  gamma      = 0.95f;
@@ -120,39 +90,32 @@ int main(int argc, char *argv[]) {
     size_t a;
     float  r;
     float  v;
-    float  log_pi;
-    size_t c, f, total_left;
+    float  pi;
     bool   terminal;
   };
   struct Step *step_buf = calloc(max_steps, sizeof(*step_buf));
   size_t       step_n   = 0;
 
   float  *as   = calloc(max_steps, sizeof(*as));
-  float  *rs   = calloc(max_steps, sizeof(*rs));
+  float  *vs   = calloc(max_steps, sizeof(*vs));
   size_t *idxs = calloc(max_steps, sizeof(*idxs));
 
-  for (int i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "-e") == 0)
-      max_epchs = atoi(argv[++i]);
-    else if (strcmp(argv[i], "-i") == 0)
-      max_iters = atoi(argv[++i]);
-    else if (strcmp(argv[i], "-s") == 0)
-      max_steps = atoi(argv[++i]);
-    else if (strcmp(argv[i], "-v") == 0)
-      verbose = true;
-    else if (strcmp(argv[i], "-l") == 0) {
-      if (argc > i + 1)
-        weights_fn = argv[++i];
-      network_load(n, weights_fn);
-    }
-  }
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "bench") == 0) {
       network_benchmark();
       goto free;
-    } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--random") == 0) {
-      random_playout();
-      goto free;
+    } else if (strcmp(argv[i], "-e") == 0) {
+      max_epchs = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "-i") == 0) {
+      max_iters = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "-s") == 0) {
+      max_steps = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "-v") == 0) {
+      verbose = true;
+    } else if (strcmp(argv[i], "-l") == 0) {
+      if (argc > i + 1)
+        weights_fn = argv[++i];
+      network_load(n, weights_fn);
     } else if (strcmp(argv[i], "-p") == 0 ||
                strcmp(argv[i], "--playout") == 0) {
       network_playout(n, true);
@@ -171,8 +134,7 @@ int main(int argc, char *argv[]) {
       get_canonical(g, &inputs);
       network_forward(n, &inputs, g);
 
-      float r = (float)rand() / (RAND_MAX + 1.0f);
-      float s = 0.0f;
+      float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
       for (size_t i = 0; i < NUM_OUTPUTS; i++) {
         s += n->as[POL_HEAD].buf[i];
         if (s > r) {
@@ -180,22 +142,22 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
+
       if (g->p == 0) {
         struct Step *step = &step_buf[step_n];
         memcpy(&step->state, inputs.buf, tensor_size(&inputs) * sizeof(float));
-        step->a          = a;
-        step->r          = 0.0f;
-        step->v          = n->as[VAL_HEAD].buf[0];
-        step->log_pi     = logf(n->as[POL_HEAD].buf[a]);
-        step->c          = g->d1bid.c;
-        step->f          = g->d1bid.f;
-        step->total_left = g->total_left;
-        step->terminal   = false;
+        step->a        = a;
+        step->r        = 0.0f;
+        step->v        = n->as[VAL_HEAD].buf[0];
+        step->pi       = n->as[POL_HEAD].buf[a];
+        step->terminal = false;
 
         if (a == CHALLENGE_IDX)
           if (challenge(g))
+            /* player challenge good (encourage plausible challenges) */
             step->r = 0.5f;
           else
+            /* player challenge bad (discourage implausible challenges) */
             step->r = -0.2f;
         else
           bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
@@ -203,11 +165,13 @@ int main(int argc, char *argv[]) {
         step_n++;
       } else {
         if (a == CHALLENGE_IDX)
-          if (g->d1bid.p == 0)
+          if (g->last.p == 0)
             if (challenge(g))
-              step_buf[step_n - 1].r = -0.5;
+              /* player challenged good (discourage implausible high bids) */
+              step_buf[step_n - 1].r = -0.2;
             else
-              step_buf[step_n - 1].r = 0.2;
+              /* player challenged bad (encourage plausible high bids) */
+              step_buf[step_n - 1].r = 0.5;
           else
             challenge(g);
         else
@@ -216,16 +180,17 @@ int main(int argc, char *argv[]) {
 
       size_t alive = 0;
       for (size_t i = 0; i < NUM_PLAYERS; i++)
-        if (g->dice_left[i] != 0)
+        if (g->player_rem[i] != 0)
           alive++;
       if (alive == 1) {
         step_buf[step_n - 1].terminal = true;
-        if (g->dice_left[0] != 0)
+        if (g->player_rem[0] != 0)
+          /* player win */
           step_buf[step_n - 1].r += 1.0f;
         else
+          /* player loss */
           step_buf[step_n - 1].r += -1.0f;
-        free(g);
-        g = game_new();
+        game_restart(g);
       }
     }
 
@@ -233,32 +198,40 @@ int main(int argc, char *argv[]) {
 
     float d    = 0.0f;
     float a    = 0.0f;
-    float r    = 0.0f;
+    float v    = 0.0f;
     float mean = 0.0f;
     float std  = 0.0f;
 
     for (size_t i = 1; i <= max_steps; i++) {
-      struct Step *step = &step_buf[max_steps - i];
-      if (i == 1 || step->terminal) {
+      size_t       idx  = max_steps - i;
+      struct Step *step = &step_buf[idx];
+
+      /*
+       * d_t = r_t + gv(s_{t+1})- v(s_t)
+       * A_t = d_t + gl(d_{t+1}) + ggll(d_{t+2}) + ...
+       *     = d_t + glA_{t+1}
+       */
+      if (i == 1) {
         d = step->r - step->v;
         a = d;
       } else {
-        d = step->r + gamma * step_buf[max_steps - i + 1].v - step->v;
+        d = step->r + gamma * step_buf[idx + 1].v - step->v;
         a = d + gamma * lambda * a;
       }
-      r = a + step->v;
+      /* v_targ(s_t) = v(s_t) + A_t */
+      v = step->v + a;
 
-      as[max_steps - i] = a;
-      rs[max_steps - i] = r;
-      mean += a;
-
+      as[idx]     = a;
+      vs[idx]     = v;
       idxs[i - 1] = i - 1;
+
+      mean += a;
     }
     mean /= max_steps;
 
     for (size_t i = 0; i < max_steps; i++)
       std += powf(as[i] - mean, 2);
-    std = sqrtf(std / max_steps + 1e-8f);
+    std = sqrtf(std / max_steps);
     for (size_t i = 0; i < max_steps; i++)
       as[i] = (as[i] - mean) / std;
 
@@ -281,24 +254,36 @@ int main(int argc, char *argv[]) {
           size_t       idx  = idxs[batch + i];
           struct Step *step = &step_buf[idx];
 
-          g_temp.total_left = step->total_left;
-          g_temp.d1bid.c    = step->c;
-          g_temp.d1bid.f    = step->f;
+          g_temp.game_rem = (size_t)(step->state[NUM_FACES + NUM_PLAYERS + 2] *
+                                         (NUM_PLAYERS * 5) +
+                                     0.5f);
+          g_temp.last.c =
+              (size_t)(step->state[NUM_FACES] * g_temp.game_rem + 0.5f);
+          g_temp.last.f =
+              (size_t)(step->state[NUM_FACES + 1] * NUM_FACES + 0.5f);
 
           memcpy(inputs.buf, step->state, sizeof(step->state));
           network_forward(n, &inputs, &g_temp);
 
-          float pi_old  = expf(step->log_pi);
-          float pi_new  = n->as[POL_HEAD].buf[step->a];
-          float r_t     = pi_new / pi_old;
+          float pi_old = step->pi;
+          float pi_new = fmaxf(n->as[POL_HEAD].buf[step->a], 1e-10f);
+          float r_t    = pi_new / pi_old;
+          /*
+           * L_clip = min(rA, clip(r, 1-e, 1+e)A)
+           *           / min(rA, (1+e)A)   A > 0
+           *        = <                0   A = 0
+           *           \ min((1-e)A, rA)   A < 0
+           */
           float dl_clip = as[idx] > 0
                               ? (r_t > 1 + epsilon ? 0 : -as[idx] / pi_old)
                               : (r_t < 1 - epsilon ? 0 : -as[idx] / pi_old);
 
-          float dl_vf = (n->as[VAL_HEAD].buf[0] - rs[idx]);
+          /* L_vf = (v_new(s) - v_targ(s))^2 */
+          float dl_vf = (n->as[VAL_HEAD].buf[0] - vs[idx]);
 
           tensor_zero(&loss_p);
 
+          /* S = -sum plogp */
           for (size_t j = 0; j < NUM_OUTPUTS; j++)
             loss_p.buf[j] =
                 c2 * (logf(fmaxf(n->as[POL_HEAD].buf[j], 1e-10f)) + 1);
@@ -310,7 +295,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    if (iter % 500 == 0) {
+    if (iter % 100 == 0) {
       network_playout(n, verbose);
       network_save(n, weights_fn);
       printf("iteration %zu complete\n", iter);
@@ -319,7 +304,7 @@ int main(int argc, char *argv[]) {
 
 free:
   free(idxs);
-  free(rs);
+  free(vs);
   free(as);
   free(step_buf);
   tensor_free(&loss_p);

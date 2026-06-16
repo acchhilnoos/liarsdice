@@ -10,16 +10,17 @@ struct Bid {
 };
 
 struct Game {
-  size_t dice[NUM_PLAYERS][NUM_FACES];
-  size_t dice_left[NUM_PLAYERS];
-  size_t total_dice[NUM_FACES];
-  size_t total_left;
-  size_t p;
-  size_t turn;
-  struct Bid d1bid, d2bid;
+  size_t bids[NUM_FACES];
+  size_t player_counts[NUM_PLAYERS][NUM_FACES];
+  size_t game_counts[NUM_FACES];
+  size_t player_rem[NUM_PLAYERS];
+  size_t game_rem;
+  size_t p, turn;
+  struct Bid last;
 };
 
 struct Game *game_new(void);
+void game_restart(struct Game *g);
 
 bool legal(const struct Game *g, size_t count, size_t face);
 void bid(struct Game *g, size_t count, size_t face);

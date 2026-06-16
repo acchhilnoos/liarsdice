@@ -4,24 +4,40 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+#define cftoidx(C, F) ((C - 1) * NUM_FACES + (F - 1))
+
+#define advance(G)                                                             \
+  do {                                                                         \
+    do                                                                         \
+      (G)->p = ((G)->p + 1) % NUM_PLAYERS;                                     \
+    while ((G)->player_rem[(G)->p] == 0);                                      \
+    (G)->turn++;                                                               \
+  } while (0)
+
+#define advance_if_inactive(G)                                                 \
+  do {                                                                         \
+    while ((G)->player_rem[(G)->p] == 0)                                       \
+      (G)->p = ((G)->p + 1) % NUM_PLAYERS;                                     \
+    (G)->turn++;                                                               \
+  } while (0)
 
 void roll(struct Game *g) {
-  g->d1bid = (struct Bid){0};
-  g->d2bid = (struct Bid){0};
-  g->turn  = 0;
-  for (size_t i = 0; i < NUM_FACES; i++)
-    g->total_dice[i] = 0;
+  memset(g->bids, 0, sizeof(g->bids));
+  memset(g->player_counts, 0, sizeof(g->player_counts));
+  memset(g->game_counts, 0, sizeof(g->game_counts));
 
   for (size_t i = 0; i < NUM_PLAYERS; i++) {
-    for (size_t j = 0; j < NUM_FACES; j++)
-      g->dice[i][j] = 0;
-
-    for (size_t j = 0; j < g->dice_left[i]; j++) {
+    for (size_t j = 0; j < g->player_rem[i]; j++) {
       int r = rand() % NUM_FACES;
-      g->dice[i][r] += 1;
-      g->total_dice[r] += 1;
+      g->player_counts[i][r] += 1;
+      g->game_counts[r] += 1;
     }
   }
+
+  g->turn = 0;
+  g->last = (struct Bid){0};
 }
 
 struct Game *game_new(void) {
@@ -32,104 +48,103 @@ struct Game *game_new(void) {
   *g = (struct Game){0};
 
   for (size_t i = 0; i < NUM_PLAYERS; i++)
-    g->dice_left[i] = 5;
-  g->total_left = 5 * NUM_PLAYERS;
+    g->player_rem[i] = 5;
+  g->game_rem = 5 * NUM_PLAYERS;
   roll(g);
 
   return g;
 }
 
+void game_restart(struct Game *g) {
+  *g = (struct Game){0};
+  for (size_t i = 0; i < NUM_PLAYERS; i++)
+    g->player_rem[i] = 5;
+  g->game_rem = 5 * NUM_PLAYERS;
+  roll(g);
+}
+
 bool legal(const struct Game *g, size_t c, size_t f) {
-  return c > 0 && c <= g->total_left &&
-         (c > g->d1bid.c || (c == g->d1bid.c && f > g->d1bid.f));
+  return c <= g->game_rem && ((g->last.c == 0 && g->last.f == 0) ||
+                              (cftoidx(c, f) > cftoidx(g->last.c, g->last.f)));
 }
 
 void bid(struct Game *g, size_t c, size_t f) {
-  bool l = legal(g, c, f);
-  if (!l) {
-    printf("illegal bid %zu %zu\n", c, f);
-    printf("last bid %zu %zu\n", g->d1bid.c, g->d1bid.f);
-    printf("dice:\n");
-    for (size_t i = 0; i < NUM_PLAYERS; i++) {
-      for (size_t j = 0; j < NUM_FACES; j++) {
-        printf("%3zu", g->dice[i][j]);
-      }
-      printf("\n");
-    }
-  }
-  ASSERT_FALSE(!l);
+  ASSERT_FALSE(!legal(g, c, f));
 
-  g->d2bid = g->d1bid;
-  g->d1bid = (struct Bid){.p = g->p, .c = c, .f = f};
-  do
-    g->p = (g->p + 1) % NUM_PLAYERS;
-  while (g->dice_left[g->p] == 0);
-  g->turn++;
+  g->bids[f - 1] = c;
+  g->last        = (struct Bid){.p = g->p, .c = c, .f = f};
+
+  advance(g);
 }
 
 bool challenge(struct Game *g) {
-  ASSERT_FALSE(g->d1bid.c == 0 || g->d1bid.f == 0);
   bool good = false;
 
-  size_t sum = g->total_dice[g->d1bid.f - 1];
-  if (g->d1bid.f != 1)
-    sum += g->total_dice[0];
+  size_t sum = g->game_counts[g->last.f - 1];
+  if (g->last.f != 1)
+    sum += g->game_counts[0];
 
-  if (sum >= g->d1bid.c) {
-    g->dice_left[g->p]--;
-  } else {
+  if (sum < g->last.c) {
     good = true;
-    g->dice_left[g->d1bid.p]--;
-    g->p = g->d1bid.p;
+    g->p = g->last.p;
   }
-  while (g->dice_left[g->p] == 0)
-    g->p = (g->p + 1) % NUM_PLAYERS;
-  g->total_left--;
+
+  g->player_rem[g->p]--;
+  g->game_rem--;
+
+  advance_if_inactive(g);
 
   roll(g);
-
   return good;
 }
 
 void get_canonical(const struct Game *g, struct Tensor *t) {
-  t->buf[0] = (float)g->d2bid.c / g->total_left;
-  t->buf[1] = (float)g->d2bid.f / NUM_FACES;
-  t->buf[2] = (float)g->d1bid.c / g->total_left;
-  t->buf[3] = (float)g->d1bid.f / NUM_FACES;
-  t->buf[4] = (float)g->turn / (NUM_PLAYERS * 5);
-  for (size_t i = g->p, j = 5; j < 8; i++)
-    if (i == g->p)
-      continue;
-    else
-      t->buf[j++] = (float)g->dice_left[i % NUM_PLAYERS] / g->total_left;
-  t->buf[8]  = (float)g->dice[g->p][0] / g->dice_left[g->p];
-  t->buf[9]  = (float)g->dice[g->p][1] / g->dice_left[g->p];
-  t->buf[10] = (float)g->dice[g->p][2] / g->dice_left[g->p];
-  t->buf[11] = (float)g->dice[g->p][3] / g->dice_left[g->p];
-  t->buf[12] = (float)g->dice[g->p][4] / g->dice_left[g->p];
-  t->buf[13] = (float)g->dice[g->p][5] / g->dice_left[g->p];
-  t->buf[14] = (float)g->dice_left[g->p] / g->total_left;
+  size_t idx = 0;
+
+  /* max bid of face */
+  for (size_t i = 0; i < NUM_FACES; i++)
+    t->buf[idx++] = (float)g->bids[i] / g->game_rem;
+
+  /* last bid */
+  t->buf[idx++] = (float)g->last.c / g->game_rem;
+  t->buf[idx++] = (float)g->last.f / NUM_FACES;
+
+  /* players' # remaining dice */
+  for (size_t i = 0; i < NUM_PLAYERS; i++)
+    t->buf[idx++] =
+        (float)g->player_rem[(g->p + i) % NUM_PLAYERS] / g->game_rem;
+
+  /* # remaining dice */
+  t->buf[idx++] = (float)g->game_rem / (NUM_PLAYERS * 5);
+
+  /* player hand */
+  for (size_t i = 0; i < NUM_FACES; i++)
+    t->buf[idx++] = (float)g->player_counts[g->p][i] / g->player_rem[g->p];
 }
 
 void game_print(const struct Game *g) {
+  printf("            1  2  3  4  5  6\n");
+
   for (size_t i = 0; i < NUM_PLAYERS; i++) {
     printf("player %zu: ", i + 1);
     for (size_t j = 0; j < NUM_FACES; j++) {
-      if (g->dice[i][j] != 0)
-        printf("  %zu", g->dice[i][j]);
+      if (g->player_counts[i][j] != 0)
+        printf("%3zu", g->player_counts[i][j]);
       else
         printf("   ");
     }
-    printf("  | %2zu\n", g->dice_left[i]);
+    printf("  |%3zu\n", g->player_rem[i]);
   }
+
   for (size_t i = 0; i < 34; i++)
     printf("-");
+
   printf("\n  totals: ");
   for (size_t i = 0; i < NUM_FACES; i++) {
-    if (g->total_dice[i] != 0)
-      printf("  %zu", g->total_dice[i]);
+    if (g->game_counts[i] != 0)
+      printf("%3zu", g->game_counts[i]);
     else
       printf("   ");
   }
-  printf("  | %2zu\n", g->total_left);
+  printf("  |%3zu\n", g->game_rem);
 }
