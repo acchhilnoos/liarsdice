@@ -166,7 +166,7 @@ void network_peek(const struct Network *n) {
           color = GREEN;
         else if (norm > 0.33f)
           color = YELLOW;
-        else if (norm > 0.01f)
+        else if (norm >= 0.001f)
           color = RED;
         else
           color = DIM;
@@ -186,14 +186,22 @@ void network_peek(const struct Network *n) {
       doubt_color = GREEN;
     else if (norm > 0.33f)
       doubt_color = YELLOW;
-    else if (norm > 0.01f)
+    else if (norm >= 0.001f)
       doubt_color = RED;
     else
       doubt_color = DIM;
   } else {
     doubt_color = GREEN;
   }
-  printf("%s%6.3f %s(challenge)%s\n", doubt_color, doubt_val, BOLD, RESET);
+  printf("%s%6.3f %s%s/", doubt_color, doubt_val, BOLD, RESET);
+
+  printf("%6.3f /", n->as[VAL_HEAD].buf[0]);
+
+  for (size_t i = 0; i < NUM_FACES; i++) {
+    float val = n->as[CRT_HEAD].buf[i];
+    printf("%6.3f%s", val, RESET);
+  }
+  printf("\n");
 }
 
 void network_save(struct Network *n, const char *path) {

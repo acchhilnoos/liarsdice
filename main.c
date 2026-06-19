@@ -24,11 +24,10 @@ void network_playout(struct Network *n, bool verbose) {
       get_canonical(g, &inputs);
       network_forward(n, &inputs, g);
 
-      float r = (float)rand() / (RAND_MAX + 1.0f);
-      float s = 0.0f;
+      float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
       for (size_t i = 0; i < NUM_POL_OUT; i++) {
         s += n->as[POL_HEAD].buf[i];
-        if (s > r) {
+        if (s >= r) {
           a = i;
           break;
         }
@@ -36,7 +35,10 @@ void network_playout(struct Network *n, bool verbose) {
       if (verbose)
         network_peek(n);
       if (a == CHALLENGE_IDX) {
-        challenge(g);
+        size_t p     = g->p;
+        bool   chall = challenge(g);
+        if (verbose)
+          printf("p%zu challenge: %s", p + 1, chall ? "good" : "bad");
         break;
       } else {
         size_t p = g->p;
@@ -72,7 +74,7 @@ int main(int argc, char *argv[]) {
   float  gamma      = 0.95f;
   float  lambda     = 0.99f;
   float  c1         = 1.0f;
-  float  c2         = 0.1f;
+  float  c2         = 0.06f;
   float  c3         = 0.1f;
   gamma *= gamma;
   gamma *= gamma;
@@ -141,7 +143,7 @@ int main(int argc, char *argv[]) {
       float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
       for (size_t i = 0; i < NUM_POL_OUT; i++) {
         s += n->as[POL_HEAD].buf[i];
-        if (s > r) {
+        if (s >= r) {
           a = i;
           break;
         }
