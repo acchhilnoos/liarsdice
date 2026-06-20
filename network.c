@@ -137,7 +137,7 @@ void network_sgd(struct Network *n, float alpha, float beta) {
   }
 }
 
-void network_peek(const struct Network *n) {
+void network_peek(const struct Network *n, const struct Game *g) {
   const char *RED    = "\033[31m";
   const char *YELLOW = "\033[33m";
   const char *GREEN  = "\033[32m";
@@ -193,15 +193,19 @@ void network_peek(const struct Network *n) {
   } else {
     doubt_color = GREEN;
   }
-  printf("%s%6.3f %s%s/", doubt_color, doubt_val, BOLD, RESET);
+  printf("%s%6.3f %s%s/ ", doubt_color, doubt_val, BOLD, RESET);
 
-  printf("%6.3f /", n->as[VAL_HEAD].buf[0]);
+  printf("est.v: %6.3f / ", n->as[VAL_HEAD].buf[0]);
 
-  for (size_t i = 0; i < NUM_FACES; i++) {
-    float val = n->as[CRT_HEAD].buf[i];
-    printf("%6.3f%s", val, RESET);
-  }
+  printf("est.dice:");
+  for (size_t i = 0; i < NUM_FACES; i++)
+    printf("%6.3f", n->as[CRT_HEAD].buf[i] * g->game_rem);
   printf("\n");
+
+  // printf("         ");
+  // for (size_t i = 0; i < NUM_FACES; i++)
+  //   printf("(%5.3f) ", n->as[CRT_HEAD].buf[i]);
+  // printf("\n");
 }
 
 void network_save(struct Network *n, const char *path) {

@@ -25,15 +25,19 @@ void network_playout(struct Network *n, bool verbose) {
       network_forward(n, &inputs, g);
 
       float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
+      float sum = 0.0f;
+      for (size_t i = 0; i < NUM_POL_OUT; i++)
+        sum += n->as[POL_HEAD].buf[i];
+      r *= sum;
       for (size_t i = 0; i < NUM_POL_OUT; i++) {
         s += n->as[POL_HEAD].buf[i];
-        if (s >= r) {
+        if (s > r) {
           a = i;
           break;
         }
       }
       if (verbose)
-        network_peek(n);
+        network_peek(n, g);
       if (a == CHALLENGE_IDX) {
         size_t p     = g->p;
         bool   chall = challenge(g);
@@ -44,7 +48,7 @@ void network_playout(struct Network *n, bool verbose) {
         size_t p = g->p;
         bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
         if (verbose)
-          printf("(%zu,%2zu,%zu)\n", p + 1, (a / NUM_FACES) + 1,
+          printf("p%zu: %2zux%2zu\n", p + 1, (a / NUM_FACES) + 1,
                  (a % NUM_FACES) + 1);
       }
     }
@@ -74,7 +78,7 @@ int main(int argc, char *argv[]) {
   float  gamma      = 0.95f;
   float  lambda     = 0.99f;
   float  c1         = 1.0f;
-  float  c2         = 0.06f;
+  float  c2         = 0.04f;
   float  c3         = 0.1f;
   gamma *= gamma;
   gamma *= gamma;
@@ -141,9 +145,13 @@ int main(int argc, char *argv[]) {
       network_forward(n, &inputs, g);
 
       float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
+      float sum = 0.0f;
+      for (size_t i = 0; i < NUM_POL_OUT; i++)
+        sum += n->as[POL_HEAD].buf[i];
+      r *= sum;
       for (size_t i = 0; i < NUM_POL_OUT; i++) {
         s += n->as[POL_HEAD].buf[i];
-        if (s >= r) {
+        if (s > r) {
           a = i;
           break;
         }

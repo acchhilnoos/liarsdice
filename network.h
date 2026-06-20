@@ -27,7 +27,7 @@ void network_backward(struct Network *n, struct Tensor *inputs,
 
 void network_sgd(struct Network *n, float alpha, float beta);
 
-void network_peek(const struct Network *n);
+void network_peek(const struct Network *n, const struct Game *g);
 
 void network_save(struct Network *n, const char *path);
 void network_load(struct Network *n, const char *path);

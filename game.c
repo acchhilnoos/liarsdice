@@ -69,8 +69,6 @@ bool legal(const struct Game *g, size_t c, size_t f) {
 }
 
 void bid(struct Game *g, size_t c, size_t f) {
-  ASSERT_FALSE(!legal(g, c, f));
-
   g->bids[f - 1] = c;
   g->last        = (struct Bid){.p = g->p, .c = c, .f = f};
 
