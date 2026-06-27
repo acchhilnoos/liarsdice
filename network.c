@@ -14,15 +14,11 @@ struct Network *network_new(void) {
 
   tensor_init(&n->ks[0], NUM_INPUTS, 128);
   tensor_init(&n->ks[1], 128, 128);
-
   tensor_init(&n->ks[2], 128, 128);
+
   tensor_init(&n->ks[3], 128, NUM_POL_OUT);
 
-  tensor_init(&n->ks[4], 128, 128);
-  tensor_init(&n->ks[5], 128, 1);
-
-  tensor_init(&n->ks[6], 128, 128);
-  tensor_init(&n->ks[7], 128, NUM_FACES);
+  tensor_init(&n->ks[4], 128, 1);
 
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     struct Tensor *ks = &n->ks[i];
@@ -68,9 +64,9 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
   tensor_relu(&n->as[0]);
   tensor_fc(&n->as[0], &n->ks[1], &n->bs[1], &n->as[1]);
   tensor_relu(&n->as[1]);
-
   tensor_fc(&n->as[1], &n->ks[2], &n->bs[2], &n->as[2]);
   tensor_relu(&n->as[2]);
+
   tensor_fc(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3]);
   for (size_t i = 0; i < NUM_PLAYERS * 5; i++)
     for (size_t j = 0; j < NUM_FACES; j++)
@@ -80,44 +76,26 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
     n->as[3].buf[CHALLENGE_IDX] = -FLT_MAX;
   tensor_softmax(&n->as[3]);
 
-  tensor_fc(&n->as[1], &n->ks[4], &n->bs[4], &n->as[4]);
-  tensor_relu(&n->as[4]);
-  tensor_fc(&n->as[4], &n->ks[5], &n->bs[5], &n->as[5]);
-  // tensor_tanh(&n->as[5]);
-
-  tensor_fc(&n->as[1], &n->ks[6], &n->bs[6], &n->as[6]);
-  tensor_relu(&n->as[6]);
-  tensor_fc(&n->as[6], &n->ks[7], &n->bs[7], &n->as[7]);
-  tensor_softmax(&n->as[7]);
+  tensor_fc(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4]);
+  // tensor_tanh(&n->as[4]);
 }
 
 void network_backward(struct Network *n, struct Tensor *inputs,
-                      const struct Tensor *loss_p, float loss_v,
-                      const struct Tensor *loss_c) {
+                      const struct Tensor *loss_p, float loss_v) {
   for (size_t i = 0; i < NUM_LAYERS; i++)
     tensor_zero_grad(&n->as[i]);
 
-  memcpy(n->as[7].grad, loss_c->buf,
-         tensor_size(loss_c) * sizeof(*loss_c->buf));
-  n->as[5].grad[0] = loss_v;
-  memcpy(n->as[3].grad, loss_p->buf,
+  n->as[VAL_HEAD].grad[0] = loss_v;
+  // tensor_tanh_grad(&n->as[4]);
+  tensor_fc_grad(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4]);
+
+  memcpy(n->as[POL_HEAD].grad, loss_p->buf,
          tensor_size(loss_p) * sizeof(*loss_p->buf));
-
-  tensor_softmax_grad(&n->as[7]);
-  tensor_fc_grad(&n->as[6], &n->ks[7], &n->bs[7], &n->as[7]);
-  tensor_relu_grad(&n->as[6]);
-  tensor_fc_grad(&n->as[1], &n->ks[6], &n->bs[6], &n->as[6]);
-
-  // tensor_tanh_grad(&n->as[5]);
-  tensor_fc_grad(&n->as[4], &n->ks[5], &n->bs[5], &n->as[5]);
-  tensor_relu_grad(&n->as[4]);
-  tensor_fc_grad(&n->as[1], &n->ks[4], &n->bs[4], &n->as[4]);
-
   tensor_softmax_grad(&n->as[3]);
   tensor_fc_grad(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3]);
+
   tensor_relu_grad(&n->as[2]);
   tensor_fc_grad(&n->as[1], &n->ks[2], &n->bs[2], &n->as[2]);
-
   tensor_relu_grad(&n->as[1]);
   tensor_fc_grad(&n->as[0], &n->ks[1], &n->bs[1], &n->as[1]);
   tensor_relu_grad(&n->as[0]);
@@ -137,7 +115,7 @@ void network_sgd(struct Network *n, float alpha, float beta) {
   }
 }
 
-void network_peek(const struct Network *n, const struct Game *g) {
+void network_peek(const struct Network *n) {
   const char *RED    = "\033[31m";
   const char *YELLOW = "\033[33m";
   const char *GREEN  = "\033[32m";
@@ -196,16 +174,7 @@ void network_peek(const struct Network *n, const struct Game *g) {
   printf("%s%6.3f %s%s/ ", doubt_color, doubt_val, BOLD, RESET);
 
   printf("est.v: %6.3f / ", n->as[VAL_HEAD].buf[0]);
-
-  printf("est.dice:");
-  for (size_t i = 0; i < NUM_FACES; i++)
-    printf("%6.3f", n->as[CRT_HEAD].buf[i] * g->game_rem);
   printf("\n");
-
-  // printf("         ");
-  // for (size_t i = 0; i < NUM_FACES; i++)
-  //   printf("(%5.3f) ", n->as[CRT_HEAD].buf[i]);
-  // printf("\n");
 }
 
 void network_save(struct Network *n, const char *path) {
@@ -240,28 +209,25 @@ void network_benchmark(void) {
   struct Network *n = network_new();
   struct Game    *g = game_new();
 
-  struct Tensor inputs, loss_p, loss_c;
+  struct Tensor inputs, loss_p;
   float         loss_v;
   tensor_init(&inputs, 1, NUM_INPUTS);
   tensor_init(&loss_p, 1, NUM_POL_OUT);
-  tensor_init(&loss_c, 1, NUM_FACES);
 
   get_canonical(g, &inputs);
   loss_v = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
   for (size_t i = 0; i < tensor_size(&loss_p); i++)
     loss_p.buf[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
-  for (size_t i = 0; i < tensor_size(&loss_c); i++)
-    loss_c.buf[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
 
   for (int i = 0; i < 100; i++) {
     network_forward(n, &inputs, g);
-    network_backward(n, &inputs, &loss_p, loss_v, &loss_c);
+    network_backward(n, &inputs, &loss_p, loss_v);
   }
 
   clock_t start = clock();
   for (int i = 0; i < 1000; i++) {
     network_forward(n, &inputs, g);
-    network_backward(n, &inputs, &loss_p, loss_v, &loss_c);
+    network_backward(n, &inputs, &loss_p, loss_v);
   }
   clock_t end = clock();
 
@@ -270,7 +236,6 @@ void network_benchmark(void) {
   printf("Average time per pass: %f ms\n", (time_spent / 1000.0) * 1000.0);
   printf("Estimated Evals per Second: %.2f\n\n", 1000.0 / time_spent);
 
-  tensor_free(&loss_c);
   tensor_free(&loss_p);
   tensor_free(&inputs);
   network_free(n);

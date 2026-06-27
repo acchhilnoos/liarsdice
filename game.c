@@ -1,7 +1,6 @@
 #include "game.h"
 #include "config.h"
 #include "tensor.h"
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -120,13 +119,14 @@ void get_canonical(const struct Game *g, struct Tensor *t) {
     t->buf[idx++] = (float)g->player_counts[g->p][i] / g->player_rem[g->p];
 }
 
-void game_print(const struct Game *g) {
+void game_print(const struct Game *g, size_t p_human) {
   printf("            1  2  3  4  5  6\n");
 
   for (size_t i = 0; i < NUM_PLAYERS; i++) {
     printf("player %zu: ", i + 1);
     for (size_t j = 0; j < NUM_FACES; j++) {
-      if (g->player_counts[i][j] != 0)
+      if (g->player_counts[i][j] != 0 &&
+          (p_human >= NUM_PLAYERS || i == p_human))
         printf("%3zu", g->player_counts[i][j]);
       else
         printf("   ");
@@ -140,9 +140,27 @@ void game_print(const struct Game *g) {
   printf("\n  totals: ");
   for (size_t i = 0; i < NUM_FACES; i++) {
     if (g->game_counts[i] != 0)
-      printf("%3zu", g->game_counts[i]);
+      if (p_human >= NUM_PLAYERS)
+        printf("%3zu", g->game_counts[i]);
+      else if (g->player_counts[p_human][i] != 0)
+        printf("%3zu", g->player_counts[p_human][i]);
+      else
+        printf("   ");
     else
       printf("   ");
   }
-  printf("  |%3zu\n", g->game_rem);
+  printf("  |%3zu\n             ", g->game_rem);
+  for (size_t i = 1; i < NUM_FACES; i++) {
+    if (g->game_counts[i] + g->game_counts[1] != 0)
+      if (p_human >= NUM_PLAYERS)
+        printf("%3zu", g->game_counts[i] + g->game_counts[0]);
+      else if (g->player_counts[p_human][i] + g->player_counts[p_human][0] != 0)
+        printf("%3zu",
+               g->player_counts[p_human][i] + g->player_counts[p_human][0]);
+      else
+        printf("   ");
+    else
+      printf("   ");
+  }
+  printf("\n");
 }

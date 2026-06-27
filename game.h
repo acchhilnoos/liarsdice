@@ -4,6 +4,7 @@
 #include "config.h"
 #include "tensor.h"
 #include <stdbool.h>
+#include <stddef.h>
 
 struct Bid {
   size_t p, c, f;
@@ -28,6 +29,6 @@ bool challenge(struct Game *g);
 
 void get_canonical(const struct Game *g, struct Tensor *t);
 
-void game_print(const struct Game *g);
+void game_print(const struct Game *g, size_t p_human);
 
 #endif

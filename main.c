@@ -8,52 +8,64 @@
 #include <string.h>
 #include <time.h>
 
-void network_playout(struct Network *n, bool verbose) {
+void playout(struct Network *n, bool human, bool verbose) {
   struct Game  *g = game_new();
   struct Tensor inputs;
   tensor_init(&inputs, 1, NUM_INPUTS);
 
+  size_t p_human = human ? rand() % NUM_PLAYERS : NUM_PLAYERS;
   size_t alive;
+  size_t round = 0;
   do {
-    if (verbose)
-      game_print(g);
+    printf("--- Round %zu ---\n", ++round);
+    game_print(g, p_human);
 
     while (1) {
       size_t a = 0;
 
-      get_canonical(g, &inputs);
-      network_forward(n, &inputs, g);
+      if (g->p == p_human) {
+        size_t c, f;
+        printf("Your turn ([count face] or [%d 1] to challenge): ",
+               NUM_PLAYERS * 5 + 1);
+        if (scanf("%zu %zu", &c, &f) == 2) {
+          a = (c - 1) * NUM_FACES + (f - 1);
+          if (!legal(g, c, f) && (a != CHALLENGE_IDX || g->last.c == 0))
+            continue;
+        } else
+          continue;
+      } else {
+        get_canonical(g, &inputs);
+        network_forward(n, &inputs, g);
 
-      float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
-      float sum = 0.0f;
-      for (size_t i = 0; i < NUM_POL_OUT; i++)
-        sum += n->as[POL_HEAD].buf[i];
-      r *= sum;
-      for (size_t i = 0; i < NUM_POL_OUT; i++) {
-        s += n->as[POL_HEAD].buf[i];
-        if (s > r) {
-          a = i;
-          break;
+        float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
+        float sum = 0.0f;
+        for (size_t i = 0; i < NUM_POL_OUT; i++)
+          sum += n->as[POL_HEAD].buf[i];
+        r *= sum;
+        for (size_t i = 0; i < NUM_POL_OUT; i++) {
+          s += n->as[POL_HEAD].buf[i];
+          if (s > r) {
+            a = i;
+            break;
+          }
         }
+
+        if (!human && verbose)
+          network_peek(n);
       }
-      if (verbose)
-        network_peek(n, g);
       if (a == CHALLENGE_IDX) {
+        if (human)
+          game_print(g, NUM_PLAYERS);
         size_t p     = g->p;
         bool   chall = challenge(g);
-        if (verbose)
-          printf("p%zu challenge: %s", p + 1, chall ? "good" : "bad");
+        printf("p%zu challenge: %s\n\n", p + 1, chall ? "good" : "bad");
         break;
       } else {
-        size_t p = g->p;
+        printf("p%zu: %2zux%2zu\n", g->p + 1, (a / NUM_FACES) + 1,
+               (a % NUM_FACES) + 1);
         bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
-        if (verbose)
-          printf("p%zu: %2zux%2zu\n", p + 1, (a / NUM_FACES) + 1,
-                 (a % NUM_FACES) + 1);
       }
     }
-    if (verbose)
-      printf("\n");
 
     alive = 0;
     for (size_t i = 0; i < NUM_PLAYERS; i++)
@@ -78,8 +90,7 @@ int main(int argc, char *argv[]) {
   float  gamma      = 0.95f;
   float  lambda     = 0.99f;
   float  c1         = 1.0f;
-  float  c2         = 0.04f;
-  float  c3         = 0.1f;
+  float  c2         = 0.05f;
   gamma *= gamma;
   gamma *= gamma;
   lambda *= lambda;
@@ -111,9 +122,13 @@ int main(int argc, char *argv[]) {
   size_t *idxs = calloc(max_steps, sizeof(*idxs));
 
   for (int i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "bench") == 0) {
+    if (strcmp(argv[i], "-b") == 0) {
       network_benchmark();
       goto free;
+    } else if (strcmp(argv[i], "-c1") == 0) {
+      c1 = atof(argv[++i]);
+    } else if (strcmp(argv[i], "-c2") == 0) {
+      c2 = atof(argv[++i]);
     } else if (strcmp(argv[i], "-e") == 0) {
       max_epchs = atoi(argv[++i]);
     } else if (strcmp(argv[i], "-i") == 0) {
@@ -126,9 +141,14 @@ int main(int argc, char *argv[]) {
       if (argc > i + 1)
         weights_fn = argv[++i];
       network_load(n, weights_fn);
-    } else if (strcmp(argv[i], "-p") == 0 ||
-               strcmp(argv[i], "--playout") == 0) {
-      network_playout(n, true);
+    } else if (strcmp(argv[i], "-n") == 0) {
+      playout(n, false, verbose);
+      goto free;
+    } else if (strcmp(argv[i], "-p") == 0) {
+      playout(n, true, true);
+      goto free;
+    } else if (strcmp(argv[i], "-t") == 0) {
+      tournament();
       goto free;
     }
   }
@@ -173,7 +193,7 @@ int main(int argc, char *argv[]) {
             step->r = 0.5f;
           else
             /* player challenge bad (discourage implausible challenges) */
-            step->r = -0.2f;
+            step->r = -0.5f;
         else
           bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
 
@@ -183,7 +203,7 @@ int main(int argc, char *argv[]) {
           if (g->last.p == 0)
             if (challenge(g))
               /* player challenged good (discourage implausible high bids) */
-              step_buf[step_n - 1].r = -0.2;
+              step_buf[step_n - 1].r = -0.5;
             else
               /* player challenged bad (encourage plausible high bids) */
               step_buf[step_n - 1].r = 0.5;
@@ -304,19 +324,14 @@ int main(int argc, char *argv[]) {
                 c2 * (logf(fmaxf(n->as[POL_HEAD].buf[j], 1e-10f)) + 1);
           loss_p.buf[step->a] += dl_clip;
 
-          /* L_crit = (c(s) - c_true(s))^2 */
-          for (size_t j = 0; j < NUM_FACES; j++)
-            loss_c.buf[j] = c3 * (n->as[CRT_HEAD].buf[j] -
-                                  ((float)step->d[j] / g_temp.game_rem));
-
-          network_backward(n, &inputs, &loss_p, c1 * dl_vf, &loss_c);
+          network_backward(n, &inputs, &loss_p, c1 * dl_vf);
         }
         network_sgd(n, alpha / MAX_BATCH_SIZE, beta);
       }
     }
 
     if (iter % 100 == 0) {
-      network_playout(n, verbose);
+      playout(n, false, verbose);
       network_save(n, weights_fn);
       printf("iteration %zu complete\n", iter);
     }
