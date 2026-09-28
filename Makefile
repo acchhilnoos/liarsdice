@@ -5,7 +5,7 @@ SRCS := game.c main.c network.c tensor.c
 OBJS := $(SRCS:.c=.o)
 DEPS := $(SRCS:.c=.d)
 
-CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O3 -lm
+CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O3 -march=native -ffast-math
 
 all: $(TARGET)
 

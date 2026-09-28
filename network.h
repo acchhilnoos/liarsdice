@@ -15,7 +15,7 @@ struct Network {
 };
 
 struct Network *network_new(void);
-void network_free(struct Network *n);
+void            network_free(struct Network *n);
 
 void network_zero_grad(struct Network *n);
 

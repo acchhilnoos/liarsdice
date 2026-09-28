@@ -9,7 +9,8 @@
 #include <string.h>
 #include <time.h>
 
-struct Network *network_new(void) {
+struct Network *network_new(void)
+{
   struct Network *n = malloc(sizeof(*n));
 
   tensor_init(&n->ks[0], NUM_INPUTS, 128);
@@ -31,15 +32,20 @@ struct Network *network_new(void) {
     tensor_init(&n->m_ks[i], ks->y, ks->x);
     tensor_init(&n->m_bs[i], bs->y, bs->x);
 
-    float limit = sqrtf(6.0f / (ks->y + ks->x));
-    for (size_t j = 0; j < tensor_size(&n->ks[i]); j++)
-      ks->buf[j] = (((float)rand() / RAND_MAX) * 2.0f - 1.0f) * limit;
+    float limit = sqrtf(2.0f / (ks->y + ks->x));
+    for (size_t j = 0; j < tensor_size(&n->ks[i]); j++) {
+      float sum = 0.0f;
+      for (size_t k = 0; k < 128; k++) sum += (float)rand() / RAND_MAX;
+      sum        /= 128;
+      ks->buf[j]  = sum * limit;
+    }
   }
 
   return n;
 }
 
-void network_free(struct Network *n) {
+void network_free(struct Network *n)
+{
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     tensor_free(&n->ks[i]);
     tensor_free(&n->bs[i]);
@@ -50,7 +56,8 @@ void network_free(struct Network *n) {
   free(n);
 }
 
-void network_zero_grad(struct Network *n) {
+void network_zero_grad(struct Network *n)
+{
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     tensor_zero_grad(&n->ks[i]);
     tensor_zero_grad(&n->bs[i]);
@@ -59,7 +66,8 @@ void network_zero_grad(struct Network *n) {
 }
 
 void network_forward(struct Network *n, const struct Tensor *inputs,
-                     const struct Game *g) {
+                     const struct Game *g)
+{
   tensor_fc(inputs, &n->ks[0], &n->bs[0], &n->as[0]);
   tensor_relu(&n->as[0]);
   tensor_fc(&n->as[0], &n->ks[1], &n->bs[1], &n->as[1]);
@@ -70,10 +78,8 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
   tensor_fc(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3]);
   for (size_t i = 0; i < NUM_PLAYERS * 5; i++)
     for (size_t j = 0; j < NUM_FACES; j++)
-      if (!legal(g, i + 1, j + 1))
-        n->as[3].buf[i * NUM_FACES + j] = -FLT_MAX;
-  if (g->last.c == 0)
-    n->as[3].buf[CHALLENGE_IDX] = -FLT_MAX;
+      if (!legal(g, i + 1, j + 1)) n->as[3].buf[i * NUM_FACES + j] = -FLT_MAX;
+  if (g->last.c == 0) n->as[3].buf[CHALLENGE_IDX] = -FLT_MAX;
   tensor_softmax(&n->as[3]);
 
   tensor_fc(&n->as[2], &n->ks[4], &n->bs[4], &n->as[4]);
@@ -81,9 +87,9 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
 }
 
 void network_backward(struct Network *n, struct Tensor *inputs,
-                      const struct Tensor *loss_p, float loss_v) {
-  for (size_t i = 0; i < NUM_LAYERS; i++)
-    tensor_zero_grad(&n->as[i]);
+                      const struct Tensor *loss_p, float loss_v)
+{
+  for (size_t i = 0; i < NUM_LAYERS; i++) tensor_zero_grad(&n->as[i]);
 
   n->as[VAL_HEAD].grad[0] = loss_v;
   // tensor_tanh_grad(&n->as[4]);
@@ -102,20 +108,34 @@ void network_backward(struct Network *n, struct Tensor *inputs,
   tensor_fc_grad(inputs, &n->ks[0], &n->bs[0], &n->as[0]);
 }
 
-void network_sgd(struct Network *n, float alpha, float beta) {
+void network_sgd(struct Network *n, float alpha, float beta)
+{
+  float norm = 0.0f;
+  for (size_t i = 0; i < NUM_LAYERS; i++) {
+    for (size_t j = 0; j < tensor_size(&n->ks[i]); j++)
+      norm += n->ks[i].grad[j] * n->ks[i].grad[j];
+    for (size_t j = 0; j < tensor_size(&n->bs[i]); j++)
+      norm += n->bs[i].grad[j] * n->bs[i].grad[j];
+  }
+  norm        = sqrtf(norm);
+  float scale = (norm > 1.0f) ? (1.0f / norm) : 1.0f;
+
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     for (size_t j = 0; j < tensor_size(&n->ks[i]); j++) {
-      n->m_ks[i].buf[j] = beta * n->m_ks[i].buf[j] + n->ks[i].grad[j];
-      n->ks[i].buf[j] -= alpha * n->m_ks[i].buf[j];
+      float grad         = n->ks[i].grad[j] * scale;
+      n->m_ks[i].buf[j]  = beta * n->m_ks[i].buf[j] + grad;
+      n->ks[i].buf[j]   -= alpha * n->m_ks[i].buf[j];
     }
     for (size_t j = 0; j < tensor_size(&n->bs[i]); j++) {
-      n->m_bs[i].buf[j] = beta * n->m_bs[i].buf[j] + n->bs[i].grad[j];
-      n->bs[i].buf[j] -= alpha * n->m_bs[i].buf[j];
+      float grad         = n->bs[i].grad[j] * scale;
+      n->m_bs[i].buf[j]  = beta * n->m_bs[i].buf[j] + grad;
+      n->bs[i].buf[j]   -= alpha * n->m_bs[i].buf[j];
     }
   }
 }
 
-void network_peek(const struct Network *n) {
+void network_peek(const struct Network *n)
+{
   const char *RED    = "\033[31m";
   const char *YELLOW = "\033[33m";
   const char *GREEN  = "\033[32m";
@@ -126,10 +146,8 @@ void network_peek(const struct Network *n) {
   float min_val = n->as[POL_HEAD].buf[0];
   float max_val = n->as[POL_HEAD].buf[0];
   for (size_t i = 0; i < NUM_POL_OUT; i++) {
-    if (n->as[POL_HEAD].buf[i] < min_val)
-      min_val = n->as[POL_HEAD].buf[i];
-    if (n->as[POL_HEAD].buf[i] > max_val)
-      max_val = n->as[POL_HEAD].buf[i];
+    if (n->as[POL_HEAD].buf[i] < min_val) min_val = n->as[POL_HEAD].buf[i];
+    if (n->as[POL_HEAD].buf[i] > max_val) max_val = n->as[POL_HEAD].buf[i];
   }
 
   float range = max_val - min_val;
@@ -140,14 +158,10 @@ void network_peek(const struct Network *n) {
       const char *color;
       if (range > 1e-8f) {
         float norm = (val - min_val) / range;
-        if (norm > 0.66f)
-          color = GREEN;
-        else if (norm > 0.33f)
-          color = YELLOW;
-        else if (norm >= 0.001f)
-          color = RED;
-        else
-          color = DIM;
+        if (norm > 0.66f) color = GREEN;
+        else if (norm > 0.33f) color = YELLOW;
+        else if (norm >= 0.001f) color = RED;
+        else color = DIM;
       } else {
         color = GREEN;
       }
@@ -160,14 +174,10 @@ void network_peek(const struct Network *n) {
   const char *doubt_color;
   if (range > 1e-8f) {
     float norm = (doubt_val - min_val) / range;
-    if (norm > 0.66f)
-      doubt_color = GREEN;
-    else if (norm > 0.33f)
-      doubt_color = YELLOW;
-    else if (norm >= 0.001f)
-      doubt_color = RED;
-    else
-      doubt_color = DIM;
+    if (norm > 0.66f) doubt_color = GREEN;
+    else if (norm > 0.33f) doubt_color = YELLOW;
+    else if (norm >= 0.001f) doubt_color = RED;
+    else doubt_color = DIM;
   } else {
     doubt_color = GREEN;
   }
@@ -177,10 +187,10 @@ void network_peek(const struct Network *n) {
   printf("\n");
 }
 
-void network_save(struct Network *n, const char *path) {
+void network_save(struct Network *n, const char *path)
+{
   FILE *f = fopen(path, "wb");
-  if (!f)
-    return;
+  if (!f) return;
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     fwrite(n->ks[i].buf, sizeof(float), tensor_size(&n->ks[i]), f);
     fwrite(n->bs[i].buf, sizeof(float), tensor_size(&n->bs[i]), f);
@@ -190,10 +200,10 @@ void network_save(struct Network *n, const char *path) {
   fclose(f);
 }
 
-void network_load(struct Network *n, const char *path) {
+void network_load(struct Network *n, const char *path)
+{
   FILE *f = fopen(path, "rb");
-  if (!f)
-    return;
+  if (!f) return;
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     fread(n->ks[i].buf, sizeof(float), tensor_size(&n->ks[i]), f);
     fread(n->bs[i].buf, sizeof(float), tensor_size(&n->bs[i]), f);
@@ -203,7 +213,8 @@ void network_load(struct Network *n, const char *path) {
   fclose(f);
 }
 
-void network_benchmark(void) {
+void network_benchmark(void)
+{
   printf("Benchmarking (1000 iterations)...\n");
 
   struct Network *n = network_new();

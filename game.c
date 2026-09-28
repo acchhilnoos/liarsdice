@@ -9,29 +9,28 @@
 
 #define advance(G)                                                             \
   do {                                                                         \
-    do                                                                         \
-      (G)->p = ((G)->p + 1) % NUM_PLAYERS;                                     \
+    do (G)->p = ((G)->p + 1) % NUM_PLAYERS;                                    \
     while ((G)->player_rem[(G)->p] == 0);                                      \
     (G)->turn++;                                                               \
   } while (0)
 
 #define advance_if_inactive(G)                                                 \
   do {                                                                         \
-    while ((G)->player_rem[(G)->p] == 0)                                       \
-      (G)->p = ((G)->p + 1) % NUM_PLAYERS;                                     \
+    while ((G)->player_rem[(G)->p] == 0) (G)->p = ((G)->p + 1) % NUM_PLAYERS;  \
     (G)->turn++;                                                               \
   } while (0)
 
-void roll(struct Game *g) {
+void roll(struct Game *g)
+{
   memset(g->bids, 0, sizeof(g->bids));
   memset(g->player_counts, 0, sizeof(g->player_counts));
   memset(g->game_counts, 0, sizeof(g->game_counts));
 
   for (size_t i = 0; i < NUM_PLAYERS; i++) {
     for (size_t j = 0; j < g->player_rem[i]; j++) {
-      int r = rand() % NUM_FACES;
+      int r                   = rand() % NUM_FACES;
       g->player_counts[i][r] += 1;
-      g->game_counts[r] += 1;
+      g->game_counts[r]      += 1;
     }
   }
 
@@ -39,47 +38,48 @@ void roll(struct Game *g) {
   g->last = (struct Bid){0};
 }
 
-struct Game *game_new(void) {
+struct Game *game_new(void)
+{
   struct Game *g = malloc(sizeof(*g));
-  if (!g)
-    return NULL;
+  if (!g) return NULL;
 
   *g = (struct Game){0};
 
-  for (size_t i = 0; i < NUM_PLAYERS; i++)
-    g->player_rem[i] = 5;
+  for (size_t i = 0; i < NUM_PLAYERS; i++) g->player_rem[i] = 5;
   g->game_rem = 5 * NUM_PLAYERS;
   roll(g);
 
   return g;
 }
 
-void game_restart(struct Game *g) {
+void game_restart(struct Game *g)
+{
   *g = (struct Game){0};
-  for (size_t i = 0; i < NUM_PLAYERS; i++)
-    g->player_rem[i] = 5;
+  for (size_t i = 0; i < NUM_PLAYERS; i++) g->player_rem[i] = 5;
   g->game_rem = 5 * NUM_PLAYERS;
   roll(g);
 }
 
-bool legal(const struct Game *g, size_t c, size_t f) {
+bool legal(const struct Game *g, size_t c, size_t f)
+{
   return c <= g->game_rem && ((g->last.c == 0 && g->last.f == 0) ||
                               (cftoidx(c, f) > cftoidx(g->last.c, g->last.f)));
 }
 
-void bid(struct Game *g, size_t c, size_t f) {
+void bid(struct Game *g, size_t c, size_t f)
+{
   g->bids[f - 1] = c;
   g->last        = (struct Bid){.p = g->p, .c = c, .f = f};
 
   advance(g);
 }
 
-bool challenge(struct Game *g) {
+bool challenge(struct Game *g)
+{
   bool good = false;
 
   size_t sum = g->game_counts[g->last.f - 1];
-  if (g->last.f != 1)
-    sum += g->game_counts[0];
+  if (g->last.f != 1) sum += g->game_counts[0];
 
   if (sum < g->last.c) {
     good = true;
@@ -95,7 +95,8 @@ bool challenge(struct Game *g) {
   return good;
 }
 
-void get_canonical(const struct Game *g, struct Tensor *t) {
+void get_canonical(const struct Game *g, struct Tensor *t)
+{
   size_t idx = 0;
 
   /* max bid of face */
@@ -119,7 +120,8 @@ void get_canonical(const struct Game *g, struct Tensor *t) {
     t->buf[idx++] = (float)g->player_counts[g->p][i] / g->player_rem[g->p];
 }
 
-void game_print(const struct Game *g, size_t p_human) {
+void game_print(const struct Game *g, size_t p_human)
+{
   printf("            1  2  3  4  5  6\n");
 
   for (size_t i = 0; i < NUM_PLAYERS; i++) {
@@ -128,26 +130,21 @@ void game_print(const struct Game *g, size_t p_human) {
       if (g->player_counts[i][j] != 0 &&
           (p_human >= NUM_PLAYERS || i == p_human))
         printf("%3zu", g->player_counts[i][j]);
-      else
-        printf("   ");
+      else printf("   ");
     }
     printf("  |%3zu\n", g->player_rem[i]);
   }
 
-  for (size_t i = 0; i < 34; i++)
-    printf("-");
+  for (size_t i = 0; i < 34; i++) printf("-");
 
   printf("\n  totals: ");
   for (size_t i = 0; i < NUM_FACES; i++) {
     if (g->game_counts[i] != 0)
-      if (p_human >= NUM_PLAYERS)
-        printf("%3zu", g->game_counts[i]);
+      if (p_human >= NUM_PLAYERS) printf("%3zu", g->game_counts[i]);
       else if (g->player_counts[p_human][i] != 0)
         printf("%3zu", g->player_counts[p_human][i]);
-      else
-        printf("   ");
-    else
-      printf("   ");
+      else printf("   ");
+    else printf("   ");
   }
   printf("  |%3zu\n             ", g->game_rem);
   for (size_t i = 1; i < NUM_FACES; i++) {
@@ -157,10 +154,8 @@ void game_print(const struct Game *g, size_t p_human) {
       else if (g->player_counts[p_human][i] + g->player_counts[p_human][0] != 0)
         printf("%3zu",
                g->player_counts[p_human][i] + g->player_counts[p_human][0]);
-      else
-        printf("   ");
-    else
-      printf("   ");
+      else printf("   ");
+    else printf("   ");
   }
   printf("\n");
 }

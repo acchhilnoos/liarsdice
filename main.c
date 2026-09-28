@@ -8,7 +8,8 @@
 #include <string.h>
 #include <time.h>
 
-void playout(struct Network *n, bool human, bool verbose) {
+void playout(struct Network *n, bool human, bool verbose)
+{
   struct Game  *g = game_new();
   struct Tensor inputs;
   tensor_init(&inputs, 1, NUM_INPUTS);
@@ -31,16 +32,14 @@ void playout(struct Network *n, bool human, bool verbose) {
           a = (c - 1) * NUM_FACES + (f - 1);
           if (!legal(g, c, f) && (a != CHALLENGE_IDX || g->last.c == 0))
             continue;
-        } else
-          continue;
+        } else continue;
       } else {
         get_canonical(g, &inputs);
         network_forward(n, &inputs, g);
 
         float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
         float sum = 0.0f;
-        for (size_t i = 0; i < NUM_POL_OUT; i++)
-          sum += n->as[POL_HEAD].buf[i];
+        for (size_t i = 0; i < NUM_POL_OUT; i++) sum += n->as[POL_HEAD].buf[i];
         r *= sum;
         for (size_t i = 0; i < NUM_POL_OUT; i++) {
           s += n->as[POL_HEAD].buf[i];
@@ -50,12 +49,10 @@ void playout(struct Network *n, bool human, bool verbose) {
           }
         }
 
-        if (!human && verbose)
-          network_peek(n);
+        if (!human && verbose) network_peek(n);
       }
       if (a == CHALLENGE_IDX) {
-        if (human)
-          game_print(g, NUM_PLAYERS);
+        if (human) game_print(g, NUM_PLAYERS);
         size_t p     = g->p;
         bool   chall = challenge(g);
         printf("p%zu challenge: %s\n\n", p + 1, chall ? "good" : "bad");
@@ -69,32 +66,35 @@ void playout(struct Network *n, bool human, bool verbose) {
 
     alive = 0;
     for (size_t i = 0; i < NUM_PLAYERS; i++)
-      if (g->player_rem[i] != 0)
-        alive++;
+      if (g->player_rem[i] != 0) alive++;
   } while (alive > 1);
 
   tensor_free(&inputs);
   free(g);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
   srand(time(NULL));
-  char  *weights_fn = "weights.bin";
-  size_t max_iters  = 10000;
-  size_t max_steps  = 2048;
-  size_t max_epchs  = 15;
-  bool   verbose    = false;
-  float  alpha      = 0.005f;
-  float  beta       = 0.9f;
-  float  epsilon    = 0.2f;
-  float  gamma      = 0.95f;
-  float  lambda     = 0.99f;
-  float  c1         = 1.0f;
-  float  c2         = 0.05f;
-  gamma *= gamma;
-  gamma *= gamma;
-  lambda *= lambda;
-  lambda *= lambda;
+
+  char  *weights_fn  = "weights.bin";
+  size_t max_iters   = 10000;
+  size_t max_steps   = 2048;
+  size_t max_epchs   = 15;
+  bool   verbose     = false;
+  bool   playout_n   = false;
+  bool   playout_p   = false;
+  float  alpha       = 0.005f;
+  float  beta        = 0.9f;
+  float  epsilon     = 0.2f;
+  float  gamma       = 0.95f;
+  gamma             *= gamma;
+  gamma             *= gamma;
+  float lambda       = 0.99f;
+  lambda            *= lambda;
+  lambda            *= lambda;
+  float c1           = 1.0f;
+  float c2           = 0.05f;
 
   struct Game    *g = game_new();
   struct Network *n = network_new();
@@ -133,24 +133,29 @@ int main(int argc, char *argv[]) {
       max_epchs = atoi(argv[++i]);
     } else if (strcmp(argv[i], "-i") == 0) {
       max_iters = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "-l") == 0) {
+      if (argc > i + 1) weights_fn = argv[++i];
+      network_load(n, weights_fn);
     } else if (strcmp(argv[i], "-s") == 0) {
       max_steps = atoi(argv[++i]);
     } else if (strcmp(argv[i], "-v") == 0) {
       verbose = true;
-    } else if (strcmp(argv[i], "-l") == 0) {
-      if (argc > i + 1)
-        weights_fn = argv[++i];
-      network_load(n, weights_fn);
     } else if (strcmp(argv[i], "-n") == 0) {
-      playout(n, false, verbose);
-      goto free;
+      playout_n = true;
     } else if (strcmp(argv[i], "-p") == 0) {
-      playout(n, true, true);
-      goto free;
-    } else if (strcmp(argv[i], "-t") == 0) {
-      tournament();
+      playout_p = true;
+    } else {
       goto free;
     }
+  }
+
+  if (playout_n) {
+    playout(n, false, verbose);
+    goto free;
+  }
+  if (playout_p) {
+    playout(n, true, true);
+    goto free;
   }
 
   /* --- --- */
@@ -166,8 +171,7 @@ int main(int argc, char *argv[]) {
 
       float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
       float sum = 0.0f;
-      for (size_t i = 0; i < NUM_POL_OUT; i++)
-        sum += n->as[POL_HEAD].buf[i];
+      for (size_t i = 0; i < NUM_POL_OUT; i++) sum += n->as[POL_HEAD].buf[i];
       r *= sum;
       for (size_t i = 0; i < NUM_POL_OUT; i++) {
         s += n->as[POL_HEAD].buf[i];
@@ -188,43 +192,33 @@ int main(int argc, char *argv[]) {
         step->terminal = false;
 
         if (a == CHALLENGE_IDX)
-          if (challenge(g))
-            /* player challenge good (encourage plausible challenges) */
-            step->r = 0.5f;
-          else
-            /* player challenge bad (discourage implausible challenges) */
-            step->r = -0.5f;
-        else
-          bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
+          // player challenge good (encourage plausible challenges)
+          if (challenge(g)) step->r = 0.5f;
+          // player challenge bad (discourage implausible challenges)
+          else step->r = -0.5f;
+        else bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
 
         step_n++;
       } else {
         if (a == CHALLENGE_IDX)
           if (g->last.p == 0)
-            if (challenge(g))
-              /* player challenged good (discourage implausible high bids) */
-              step_buf[step_n - 1].r = -0.5;
-            else
-              /* player challenged bad (encourage plausible high bids) */
-              step_buf[step_n - 1].r = 0.5;
-          else
-            challenge(g);
-        else
-          bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
+            // player challenged good (discourage implausible high bids)
+            if (challenge(g)) step_buf[step_n - 1].r = -0.5;
+            // player challenged bad (encourage plausible high bids)
+            else step_buf[step_n - 1].r = 0.5;
+          else challenge(g);
+        else bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);
       }
 
       size_t alive = 0;
       for (size_t i = 0; i < NUM_PLAYERS; i++)
-        if (g->player_rem[i] != 0)
-          alive++;
+        if (g->player_rem[i] != 0) alive++;
       if (alive == 1) {
         step_buf[step_n - 1].terminal = true;
-        if (g->player_rem[0] != 0)
-          /* player win */
-          step_buf[step_n - 1].r += 1.0f;
-        else
-          /* player loss */
-          step_buf[step_n - 1].r += -1.0f;
+        // player win
+        if (g->player_rem[0] != 0) step_buf[step_n - 1].r += 1.0f;
+        // player loss
+        else step_buf[step_n - 1].r += -1.0f;
         game_restart(g);
       }
     }
@@ -241,7 +235,7 @@ int main(int argc, char *argv[]) {
       size_t       idx  = max_steps - i;
       struct Step *step = &step_buf[idx];
 
-      /*
+      /**
        * d_t = r_t + gv(s_{t+1})- v(s_t)
        * A_t = d_t + gl(d_{t+1}) + ggll(d_{t+2}) + ...
        *     = d_t + glA_{t+1}
@@ -253,7 +247,7 @@ int main(int argc, char *argv[]) {
         d = step->r + gamma * step_buf[idx + 1].v - step->v;
         a = d + gamma * lambda * a;
       }
-      /* v_targ(s_t) = v(s_t) + A_t */
+      // v_targ(s_t) = v(s_t) + A_t
       v = step->v + a;
 
       as[idx]     = a;
@@ -264,11 +258,9 @@ int main(int argc, char *argv[]) {
     }
     mean /= max_steps;
 
-    for (size_t i = 0; i < max_steps; i++)
-      std += powf(as[i] - mean, 2);
+    for (size_t i = 0; i < max_steps; i++) std += powf(as[i] - mean, 2);
     std = sqrtf(std / max_steps);
-    for (size_t i = 0; i < max_steps; i++)
-      as[i] = (as[i] - mean) / std;
+    for (size_t i = 0; i < max_steps; i++) as[i] = (as[i] - mean) / std;
 
     /* --- --- */
 
@@ -302,7 +294,7 @@ int main(int argc, char *argv[]) {
           float pi_old = step->pi;
           float pi_new = fmaxf(n->as[POL_HEAD].buf[step->a], 1e-10f);
           float r_t    = pi_new / pi_old;
-          /*
+          /**
            * L_clip = min(rA, clip(r, 1-e, 1+e)A)
            *           / min(rA, (1+e)A)   A > 0
            *        = <                0   A = 0
