@@ -5,20 +5,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define cftoidx(C, F) ((C - 1) * NUM_FACES + (F - 1))
+static inline size_t cftoidx(size_t C, size_t F)
+{ return (C - 1) * NUM_FACES + (F - 1); }
 
-#define advance(G)                                                             \
-  do {                                                                         \
-    do (G)->p = ((G)->p + 1) % NUM_PLAYERS;                                    \
-    while ((G)->player_rem[(G)->p] == 0);                                      \
-    (G)->turn++;                                                               \
-  } while (0)
+static inline void advance(struct Game *g)
+{
+  do (g)->p = ((g)->p + 1) % NUM_PLAYERS;
+  while ((g)->player_rem[(g)->p] == 0);
+  (g)->turn++;
+}
 
-#define advance_if_inactive(G)                                                 \
-  do {                                                                         \
-    while ((G)->player_rem[(G)->p] == 0) (G)->p = ((G)->p + 1) % NUM_PLAYERS;  \
-    (G)->turn++;                                                               \
-  } while (0)
+static inline void advance_if_inactive(struct Game *G)
+{
+  while ((G)->player_rem[(G)->p] == 0) (G)->p = ((G)->p + 1) % NUM_PLAYERS;
+  (G)->turn++;
+}
 
 void roll(struct Game *g)
 {
@@ -43,20 +44,16 @@ struct Game *game_new(void)
   struct Game *g = malloc(sizeof(*g));
   if (!g) return NULL;
 
-  *g = (struct Game){0};
-
-  for (size_t i = 0; i < NUM_PLAYERS; i++) g->player_rem[i] = 5;
-  g->game_rem = 5 * NUM_PLAYERS;
-  roll(g);
-
+  game_restart(g);
   return g;
 }
 
 void game_restart(struct Game *g)
 {
   *g = (struct Game){0};
-  for (size_t i = 0; i < NUM_PLAYERS; i++) g->player_rem[i] = 5;
-  g->game_rem = 5 * NUM_PLAYERS;
+  for (size_t i = 0; i < NUM_PLAYERS; i++)
+    g->player_rem[i] = NUM_DICE_PER_PLAYER;
+  g->game_rem = NUM_TOTAL_DICE;
   roll(g);
 }
 
@@ -99,23 +96,23 @@ void get_canonical(const struct Game *g, struct Tensor *t)
 {
   size_t idx = 0;
 
-  /* max bid of face */
+  //  max bid of face
   for (size_t i = 0; i < NUM_FACES; i++)
     t->buf[idx++] = (float)g->bids[i] / g->game_rem;
 
-  /* last bid */
+  // last bid
   t->buf[idx++] = (float)g->last.c / g->game_rem;
   t->buf[idx++] = (float)g->last.f / NUM_FACES;
 
-  /* players' # remaining dice */
+  // players' # remaining dice
   for (size_t i = 0; i < NUM_PLAYERS; i++)
     t->buf[idx++] =
         (float)g->player_rem[(g->p + i) % NUM_PLAYERS] / g->game_rem;
 
-  /* # remaining dice */
-  t->buf[idx++] = (float)g->game_rem / (NUM_PLAYERS * 5);
+  // # remaining dice
+  t->buf[idx++] = (float)g->game_rem / NUM_TOTAL_DICE;
 
-  /* player hand */
+  // player hand
   for (size_t i = 0; i < NUM_FACES; i++)
     t->buf[idx++] = (float)g->player_counts[g->p][i] / g->player_rem[g->p];
 }

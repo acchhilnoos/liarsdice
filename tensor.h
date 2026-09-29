@@ -3,14 +3,14 @@
 
 #include <stddef.h>
 
-#define tensor_size(t) ((t)->y * (t)->x)
-
 struct Tensor {
   float *buf, *grad;
   size_t y, x;
 };
 
-void tensor_init(struct Tensor *t, size_t y, size_t x);
+inline size_t tensor_size(const struct Tensor *t) { return (t->y * t->x); }
+
+int tensor_init(struct Tensor *t, size_t y, size_t x);
 void tensor_free(struct Tensor *t);
 
 void tensor_reshape(struct Tensor *t, size_t y, size_t x);

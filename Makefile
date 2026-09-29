@@ -1,13 +1,17 @@
 CC := gcc
 TARGET := main
 
-SRCS := game.c main.c network.c tensor.c
+SRCS := game.c main.c network.c play.c tensor.c train.c
 OBJS := $(SRCS:.c=.o)
 DEPS := $(SRCS:.c=.d)
 
-CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O3 -march=native -ffast-math
+CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -mavx2 -mfma
 
+all: CFLAGS += -O3 -lm
 all: $(TARGET)
+
+debug: CFLAGS += -O0 -g -fsanitize=address -lm
+debug: $(TARGET)
 
 $(TARGET): $(OBJS)
 	@echo "Linking $@..."
@@ -21,10 +25,16 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	./$(TARGET)
 
+test: CFLAGS += -O3 -lm
+test: tensor.o test.o
+	@echo "Linking $@..."
+	@$(CC) $(CFLAGS) -o $@ $^ 2>> /dev/null
+	@rm -f test.o
+
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -f $(OBJS) $(DEPS) $(TARGET)
 	@rm -rf *.dSYM
 	@echo "Clean complete"
 
-.PHONY: all clean run
+.PHONY: all clean debug run test

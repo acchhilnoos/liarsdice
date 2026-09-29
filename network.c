@@ -1,5 +1,4 @@
 #include "network.h"
-#include "config.h"
 #include "game.h"
 #include "tensor.h"
 #include <float.h>
@@ -9,28 +8,48 @@
 #include <string.h>
 #include <time.h>
 
+static inline bool layer_init(struct Network *n, size_t i, size_t y, size_t x)
+{
+  if (tensor_init(&n->ks[i], y, x) != 0) goto fail_ks;
+  if (tensor_init(&n->m_ks[i], y, x) != 0) goto fail_m_ks;
+  if (tensor_init(&n->bs[i], 1, x) != 0) goto fail_bs;
+  if (tensor_init(&n->m_bs[i], 1, x) != 0) goto fail_m_bs;
+  if (tensor_init(&n->as[i], 1, x) != 0) goto fail_as;
+  return true;
+
+fail_as:
+  tensor_free(&n->m_bs[i]);
+fail_m_bs:
+  tensor_free(&n->bs[i]);
+fail_bs:
+  tensor_free(&n->m_ks[i]);
+fail_m_ks:
+  tensor_free(&n->ks[i]);
+fail_ks:
+  for (size_t j = 0; j < i; j++) {
+    tensor_free(&n->ks[j]);
+    tensor_free(&n->m_ks[j]);
+    tensor_free(&n->bs[j]);
+    tensor_free(&n->m_bs[j]);
+    tensor_free(&n->as[j]);
+  }
+  return false;
+}
+
 struct Network *network_new(void)
 {
   struct Network *n = malloc(sizeof(*n));
+  if (!n) goto fail_n;
 
-  tensor_init(&n->ks[0], NUM_INPUTS, 128);
-  tensor_init(&n->ks[1], 128, 128);
-  tensor_init(&n->ks[2], 128, 128);
-
-  tensor_init(&n->ks[3], 128, NUM_POL_OUT);
-
-  tensor_init(&n->ks[4], 128, 1);
+  for (size_t i = 0; i < NUM_LAYERS; i++)
+    if (!layer_init(n, i, i == 0 ? NUM_INPUTS : 128,
+                    i == POL_HEAD   ? NUM_POL_OUT
+                    : i == VAL_HEAD ? 1
+                                    : 128))
+      goto fail_l;
 
   for (size_t i = 0; i < NUM_LAYERS; i++) {
     struct Tensor *ks = &n->ks[i];
-    struct Tensor *bs = &n->bs[i];
-    struct Tensor *as = &n->as[i];
-
-    tensor_init(bs, 1, ks->x);
-    tensor_init(as, 1, ks->x);
-
-    tensor_init(&n->m_ks[i], ks->y, ks->x);
-    tensor_init(&n->m_bs[i], bs->y, bs->x);
 
     float limit = sqrtf(2.0f / (ks->y + ks->x));
     for (size_t j = 0; j < tensor_size(&n->ks[i]); j++) {
@@ -42,6 +61,11 @@ struct Network *network_new(void)
   }
 
   return n;
+
+fail_l:
+  free(n);
+fail_n:
+  return NULL;
 }
 
 void network_free(struct Network *n)
@@ -76,7 +100,7 @@ void network_forward(struct Network *n, const struct Tensor *inputs,
   tensor_relu(&n->as[2]);
 
   tensor_fc(&n->as[2], &n->ks[3], &n->bs[3], &n->as[3]);
-  for (size_t i = 0; i < NUM_PLAYERS * 5; i++)
+  for (size_t i = 0; i < NUM_TOTAL_DICE; i++)
     for (size_t j = 0; j < NUM_FACES; j++)
       if (!legal(g, i + 1, j + 1)) n->as[3].buf[i * NUM_FACES + j] = -FLT_MAX;
   if (g->last.c == 0) n->as[3].buf[CHALLENGE_IDX] = -FLT_MAX;
@@ -153,7 +177,7 @@ void network_peek(const struct Network *n)
   float range = max_val - min_val;
 
   for (size_t i = 0; i < NUM_FACES; i++) {
-    for (size_t j = 0; j < NUM_PLAYERS * 5; j++) {
+    for (size_t j = 0; j < NUM_TOTAL_DICE; j++) {
       float       val = n->as[POL_HEAD].buf[j * NUM_FACES + i];
       const char *color;
       if (range > 1e-8f) {

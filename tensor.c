@@ -1,16 +1,28 @@
 #include "tensor.h"
 #include <float.h>
+#include <immintrin.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-void tensor_init(struct Tensor *t, size_t y, size_t x)
+extern inline size_t tensor_size(const struct Tensor *t);
+
+int tensor_init(struct Tensor *t, size_t y, size_t x)
 {
-  t->buf  = calloc(y * x, sizeof(*t->buf));
+  t->buf = calloc(y * x, sizeof(*t->buf));
+  if (!t->buf) goto fail_b;
   t->grad = calloc(y * x, sizeof(*t->grad));
+  if (!t->grad) goto fail_g;
 
   t->y = y;
   t->x = x;
+
+  return 0;
+
+fail_g:
+  free(t->buf);
+fail_b:
+  return 1;
 }
 
 void tensor_reshape(struct Tensor *t, size_t y, size_t x)
@@ -92,34 +104,57 @@ void tensor_softmax_grad(struct Tensor *t)
 void tensor_fc(const struct Tensor *in, const struct Tensor *k,
                const struct Tensor *bias, struct Tensor *out)
 {
-  float *restrict out_ptr = out->buf;
-  float *restrict in_ptr  = in->buf;
-  float *restrict k_ptr   = k->buf;
+  float *const restrict o_ptr       = out->buf;
+  const float *const restrict i_ptr = in->buf;
+  const float *const restrict k_ptr = k->buf;
 
-  for (size_t ox = 0; ox < out->x; ox++) out_ptr[ox] = bias->buf[ox];
+  for (size_t ox = 0; ox < out->x; ox++) o_ptr[ox] = bias->buf[ox];
 
-  for (size_t ix = 0; ix < in->x; ix++)
-    for (size_t ox = 0; ox < out->x; ox++)
-      out_ptr[ox] += in_ptr[ix] * k_ptr[ix * out->x + ox];
+  for (size_t ix = 0; ix < in->x; ix++) {
+    size_t ox    = 0;
+    __m256 i_vec = _mm256_set1_ps(i_ptr[ix]);
+    for (; ox + 8 <= out->x; ox += 8) {
+      __m256 o_vec = _mm256_loadu_ps(o_ptr + ox);
+      __m256 k_vec = _mm256_loadu_ps(k_ptr + ix * out->x + ox);
+      o_vec        = _mm256_fmadd_ps(i_vec, k_vec, o_vec);
+      _mm256_storeu_ps(o_ptr + ox, o_vec);
+    }
+    for (; ox < out->x; ox++) o_ptr[ox] += i_ptr[ix] * k_ptr[ix * out->x + ox];
+  }
 }
 
 void tensor_fc_grad(struct Tensor *in, struct Tensor *k, struct Tensor *bias,
                     const struct Tensor *out)
 {
-  float *restrict out_grad_ptr = out->grad;
-  float *restrict in_grad_ptr  = in->grad;
-  float *restrict k_ptr        = k->buf;
+  const float *const restrict o_grd = out->grad;
+  const float *const restrict i_ptr = in->buf;
+  float *const restrict i_grd       = in->grad;
+  const float *const restrict k_ptr = k->buf;
+  float *const restrict k_grd       = k->grad;
 
-  for (size_t ix = 0; ix < in->x; ix++)
-    for (size_t ox = 0; ox < out->x; ox++)
-      in_grad_ptr[ix] += out_grad_ptr[ox] * k_ptr[ix * out->x + ox];
+  for (size_t ix = 0; ix < in->x; ix++) {
+    __m256 i_vec   = _mm256_set1_ps(i_ptr[ix]);
+    __m256 sum_vec = _mm256_setzero_ps();
+    size_t ox      = 0;
+    for (; ox + 8 <= out->x; ox += 8) {
+      __m256 k_vec  = _mm256_loadu_ps(k_ptr + ix * out->x + ox);
+      __m256 kg_vec = _mm256_loadu_ps(k_grd + ix * out->x + ox);
+      __m256 og_vec = _mm256_loadu_ps(o_grd + ox);
 
-  float *restrict in_ptr     = in->buf;
-  float *restrict k_grad_ptr = k->grad;
+      sum_vec = _mm256_fmadd_ps(og_vec, k_vec, sum_vec);
+      kg_vec  = _mm256_fmadd_ps(og_vec, i_vec, kg_vec);
+      _mm256_storeu_ps(k_grd + ix * out->x + ox, kg_vec);
+    }
+    float sum = 0.0f;
+    float sum_ptr[8];
+    _mm256_storeu_ps(sum_ptr, sum_vec);
+    for (size_t i = 0; i < 8; i++) sum += sum_ptr[i];
 
-  for (size_t ix = 0; ix < in->x; ix++)
-    for (size_t ox = 0; ox < out->x; ox++)
-      k_grad_ptr[ix * out->x + ox] += out_grad_ptr[ox] * in_ptr[ix];
-
-  if (bias) { tensor_add_grad(bias, out); }
+    for (; ox < out->x; ox++) {
+      sum                     += o_grd[ox] * k_ptr[ix * out->x + ox];
+      k_grd[ix * out->x + ox] += o_grd[ox] * i_ptr[ix];
+    }
+    i_grd[ix] += sum;
+  }
+  tensor_add_grad(bias, out);
 }
