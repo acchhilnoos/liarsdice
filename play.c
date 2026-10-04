@@ -37,10 +37,10 @@ int playout(struct Network *n, bool human, bool verbose)
 
         float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
         float sum = 0.0f;
-        for (size_t i = 0; i < NUM_POL_OUT; i++) sum += n->as[POL_HEAD].buf[i];
+        for (size_t i = 0; i < SIZE_POL; i++) sum += n->as[POL_HEAD_IDX].buf[i];
         r *= sum;
-        for (size_t i = 0; i < NUM_POL_OUT; i++) {
-          s += n->as[POL_HEAD].buf[i];
+        for (size_t i = 0; i < SIZE_POL; i++) {
+          s += n->as[POL_HEAD_IDX].buf[i];
           if (s > r) {
             a = i;
             break;

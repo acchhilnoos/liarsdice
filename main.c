@@ -45,17 +45,17 @@ int main(int argc, char *argv[])
       max_epchs = atoi(argv[++i]);
     } else if (strcmp(argv[i], "-i") == 0) {
       max_iters = atoi(argv[++i]);
-    } else if (strcmp(argv[i], "-l") == 0) {
-      if (argc > i + 1) weights_fn = argv[++i];
-      network_load(n, weights_fn);
-    } else if (strcmp(argv[i], "-s") == 0) {
-      max_steps = atoi(argv[++i]);
-    } else if (strcmp(argv[i], "-v") == 0) {
-      verbose = true;
     } else if (strcmp(argv[i], "-n") == 0) {
       playout_n = true;
     } else if (strcmp(argv[i], "-p") == 0) {
       playout_p = true;
+    } else if (strcmp(argv[i], "-s") == 0) {
+      max_steps = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "-v") == 0) {
+      verbose = true;
+    } else if (strcmp(argv[i], "-w") == 0) {
+      if (argc > i + 1) weights_fn = argv[++i];
+      network_load(n, weights_fn);
     }
   }
 

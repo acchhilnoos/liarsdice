@@ -25,8 +25,8 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
   struct Tensor inputs;
   struct Tensor loss_p;
   struct Tensor loss_c;
-  if (tensor_init(&inputs, 1, NUM_INPUTS) != 0) goto fail_i;
-  if (tensor_init(&loss_p, 1, NUM_POL_OUT) != 0) goto fail_lp;
+  if (tensor_init(&inputs, 1, NUM_INPUTS) != 0) goto fail_is;
+  if (tensor_init(&loss_p, 1, SIZE_POL) != 0) goto fail_lp;
   if (tensor_init(&loss_c, 1, NUM_FACES) != 0) goto fail_lc;
 
   struct Step *step_buf = calloc(max_steps, sizeof(*step_buf));
@@ -54,10 +54,10 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
 
       float r = (float)rand() / (RAND_MAX + 1.0f), s = 0.0f;
       float sum = 0.0f;
-      for (size_t i = 0; i < NUM_POL_OUT; i++) sum += n->as[POL_HEAD].buf[i];
+      for (size_t i = 0; i < SIZE_POL; i++) sum += n->as[POL_HEAD_IDX].buf[i];
       r *= sum;
-      for (size_t i = 0; i < NUM_POL_OUT; i++) {
-        s += n->as[POL_HEAD].buf[i];
+      for (size_t i = 0; i < SIZE_POL; i++) {
+        s += n->as[POL_HEAD_IDX].buf[i];
         if (s > r) {
           a = i;
           break;
@@ -70,8 +70,8 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
         memcpy(&step->d, g->game_counts, sizeof(g->game_counts));
         step->a        = a;
         step->r        = 0.0f;
-        step->v        = n->as[VAL_HEAD].buf[0];
-        step->pi       = n->as[POL_HEAD].buf[a];
+        step->v        = n->as[VAL_HEAD_IDX].buf[0];
+        step->pi       = n->as[POL_HEAD_IDX].buf[a];
         step->terminal = false;
 
         if (a == CHALLENGE_IDX)
@@ -114,8 +114,8 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
     float mean = 0.0f;
     float std  = 0.0f;
 
-    for (size_t i = 1; i <= max_steps; i++) {
-      size_t       idx  = max_steps - i;
+    for (size_t i = 0; i < max_steps; i++) {
+      size_t       idx  = max_steps - i - 1;
       struct Step *step = &step_buf[idx];
 
       /**
@@ -123,7 +123,7 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
        * A_t = d_t + gl(d_{t+1}) + ggll(d_{t+2}) + ...
        *     = d_t + glA_{t+1}
        */
-      if (i == 1) {
+      if (i == 0) {
         d = step->r - step->v;
         a = d;
       } else {
@@ -133,9 +133,9 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
       // v_targ(s_t) = v(s_t) + A_t
       v = step->v + a;
 
-      as[idx]     = a;
-      vs[idx]     = v;
-      idxs[i - 1] = i - 1;
+      as[idx] = a;
+      vs[idx] = v;
+      idxs[i] = i;
 
       mean += a;
     }
@@ -175,7 +175,7 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
           network_forward(n, &inputs, &g_temp);
 
           float pi_old = step->pi;
-          float pi_new = fmaxf(n->as[POL_HEAD].buf[step->a], 1e-10f);
+          float pi_new = fmaxf(n->as[POL_HEAD_IDX].buf[step->a], 1e-10f);
           float r_t    = pi_new / pi_old;
           /**
            * L_clip = min(rA, clip(r, 1-e, 1+e)A)
@@ -188,15 +188,15 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
                               : (r_t < 1 - epsilon ? 0 : -as[idx] / pi_old);
 
           // L_vf = (v_new(s) - v_targ(s))^2
-          float dl_vf = (n->as[VAL_HEAD].buf[0] - vs[idx]);
+          float dl_vf = (n->as[VAL_HEAD_IDX].buf[0] - vs[idx]);
 
           tensor_zero(&loss_p);
           tensor_zero(&loss_c);
 
           // S = -sum plogp
-          for (size_t j = 0; j < NUM_POL_OUT; j++)
+          for (size_t j = 0; j < SIZE_POL; j++)
             loss_p.buf[j] =
-                c2 * (logf(fmaxf(n->as[POL_HEAD].buf[j], 1e-10f)) + 1);
+                c2 * (logf(fmaxf(n->as[POL_HEAD_IDX].buf[j], 1e-10f)) + 1);
           loss_p.buf[step->a] += dl_clip;
 
           network_backward(n, &inputs, &loss_p, c1 * dl_vf);
@@ -233,7 +233,7 @@ fail_lc:
   tensor_free(&loss_p);
 fail_lp:
   tensor_free(&inputs);
-fail_i:
+fail_is:
   free(g);
 fail_g:
   return 1;
