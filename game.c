@@ -5,25 +5,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline size_t cftoidx(size_t C, size_t F)
-{ return (C - 1) * NUM_FACES + (F - 1); }
+static inline size_t cftoidx(size_t c, size_t f)
+{ return (c - 1) * NUM_FACES + (f - 1); }
 
 static inline void advance(struct Game *g)
 {
-  do (g)->p = ((g)->p + 1) % NUM_PLAYERS;
-  while ((g)->player_rem[(g)->p] == 0);
-  (g)->turn++;
-}
-
-static inline void advance_if_inactive(struct Game *G)
-{
-  while ((G)->player_rem[(G)->p] == 0) (G)->p = ((G)->p + 1) % NUM_PLAYERS;
-  (G)->turn++;
+  do g->p = (g->p + 1) % NUM_PLAYERS;
+  while (g->player_rem[g->p] == 0);
+  g->turn++;
 }
 
 void roll(struct Game *g)
 {
-  memset(g->bids, 0, sizeof(g->bids));
   memset(g->player_counts, 0, sizeof(g->player_counts));
   memset(g->game_counts, 0, sizeof(g->game_counts));
 
@@ -35,8 +28,18 @@ void roll(struct Game *g)
     }
   }
 
-  g->turn = 0;
-  g->last = (struct Bid){0};
+  g->turn   = 0;
+  g->last.c = 0;
+  g->last.f = 0;
+  g->last.p = 0;
+}
+
+void game_restart(struct Game *g)
+{
+  *g = (struct Game){0};
+  for (size_t i = 0; i < NUM_PLAYERS; i++)
+    g->player_rem[i] = NUM_DICE_PER_PLAYER;
+  roll(g);
 }
 
 struct Game *game_new(void)
@@ -48,25 +51,19 @@ struct Game *game_new(void)
   return g;
 }
 
-void game_restart(struct Game *g)
-{
-  *g = (struct Game){0};
-  for (size_t i = 0; i < NUM_PLAYERS; i++)
-    g->player_rem[i] = NUM_DICE_PER_PLAYER;
-  g->game_rem = NUM_TOTAL_DICE;
-  roll(g);
-}
-
 bool legal(const struct Game *g, size_t c, size_t f)
 {
-  return c <= g->game_rem && ((g->last.c == 0 && g->last.f == 0) ||
-                              (cftoidx(c, f) > cftoidx(g->last.c, g->last.f)));
+  size_t rem = 0;
+  for (size_t i = 0; i < NUM_PLAYERS; i++) rem += g->player_rem[i];
+  return c <= rem && ((g->last.c == 0 && g->last.f == 0) ||
+                      (cftoidx(c, f) > cftoidx(g->last.c, g->last.f)));
 }
 
 void bid(struct Game *g, size_t c, size_t f)
 {
-  g->bids[f - 1] = c;
-  g->last        = (struct Bid){.p = g->p, .c = c, .f = f};
+  g->last.c = c;
+  g->last.f = f;
+  g->last.p = g->p;
 
   advance(g);
 }
@@ -84,9 +81,9 @@ bool challenge(struct Game *g)
   }
 
   g->player_rem[g->p]--;
-  g->game_rem--;
 
-  advance_if_inactive(g);
+  if (g->player_rem[g->p] == 0) advance(g);
+  else g->turn++;
 
   roll(g);
   return good;
@@ -95,30 +92,25 @@ bool challenge(struct Game *g)
 void get_canonical(const struct Game *g, struct Tensor *t)
 {
   size_t idx = 0;
+  size_t rem = 0;
+  for (size_t i = 0; i < NUM_PLAYERS; i++) rem += g->player_rem[i];
 
-  //  max bid of face
-  for (size_t i = 0; i < NUM_FACES; i++)
-    t->buf[idx++] = (float)g->bids[i] / g->game_rem;
-
-  // last bid
-  t->buf[idx++] = (float)g->last.c / g->game_rem;
-  t->buf[idx++] = (float)g->last.f / NUM_FACES;
-
-  // players' # remaining dice
-  for (size_t i = 0; i < NUM_PLAYERS; i++)
-    t->buf[idx++] =
-        (float)g->player_rem[(g->p + i) % NUM_PLAYERS] / g->game_rem;
-
-  // # remaining dice
-  t->buf[idx++] = (float)g->game_rem / NUM_TOTAL_DICE;
-
-  // player hand
   for (size_t i = 0; i < NUM_FACES; i++)
     t->buf[idx++] = (float)g->player_counts[g->p][i] / g->player_rem[g->p];
+
+  t->buf[idx++] = (float)g->player_rem[g->p] / rem;
+
+  for (size_t i = 0; i < NUM_PLAYERS; i++)
+    t->buf[idx++] = (float)g->player_rem[(g->p + i) % NUM_PLAYERS] / rem;
+
+  t->buf[idx++] = (float)rem / NUM_TOTAL_DICE;
 }
 
 void game_print(const struct Game *g, size_t p_human)
 {
+  size_t rem = 0;
+  for (size_t i = 0; i < NUM_PLAYERS; i++) rem += g->player_rem[i];
+
   printf("            1  2  3  4  5  6\n");
 
   for (size_t i = 0; i < NUM_PLAYERS; i++) {
@@ -143,7 +135,7 @@ void game_print(const struct Game *g, size_t p_human)
       else printf("   ");
     else printf("   ");
   }
-  printf("  |%3zu\n             ", g->game_rem);
+  printf("  |%3zu\n             ", rem);
   for (size_t i = 1; i < NUM_FACES; i++) {
     if (g->game_counts[i] + g->game_counts[1] != 0)
       if (p_human >= NUM_PLAYERS)

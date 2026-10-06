@@ -6,24 +6,23 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-struct Bid {
-  size_t p, c, f;
-};
-
 struct Game {
-  size_t     bids[NUM_FACES];
-  size_t     player_counts[NUM_PLAYERS][NUM_FACES];
-  size_t     game_counts[NUM_FACES];
-  size_t     player_rem[NUM_PLAYERS];
-  size_t     game_rem;
-  size_t     p, turn;
-  struct Bid last;
+  size_t player_counts[NUM_PLAYERS][NUM_FACES];
+  size_t game_counts[NUM_FACES];
+  size_t player_rem[NUM_PLAYERS];
+  size_t p;
+  size_t turn;
+  struct {
+    size_t c, f, p;
+  } last;
 };
 
 struct Game *game_new(void);
 void         game_restart(struct Game *g);
 
+/** 1-indexed legal bet check */
 bool legal(const struct Game *g, size_t count, size_t face);
+
 void bid(struct Game *g, size_t count, size_t face);
 bool challenge(struct Game *g);
 

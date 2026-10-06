@@ -5,27 +5,44 @@
 #define NUM_FACES           6
 #define NUM_PLAYERS         4
 #define NUM_TOTAL_DICE      (NUM_DICE_PER_PLAYER * NUM_PLAYERS)
-#define NUM_LEGAL_BIDS      (NUM_TOTAL_DICE * NUM_FACES)
-#define CHALLENGE_IDX       NUM_LEGAL_BIDS
+
+/* --- network --- */
+
+#define NUM_MLP_LAYERS 3
+
+#define GRU_WR_IDX NUM_MLP_LAYERS
+#define GRU_UR_IDX (GRU_WR_IDX + 1)
+#define GRU_WZ_IDX (GRU_UR_IDX + 1)
+#define GRU_UZ_IDX (GRU_WZ_IDX + 1)
+#define GRU_WH_IDX (GRU_UZ_IDX + 1)
+#define GRU_UH_IDX (GRU_WH_IDX + 1)
+#define GRU_BR_IDX GRU_WR_IDX
+#define GRU_BZ_IDX GRU_WZ_IDX
+#define GRU_BH_IDX GRU_WH_IDX
+#define GRU_R_IDX  GRU_WR_IDX
+#define GRU_Z_IDX  GRU_WZ_IDX
+#define GRU_H_IDX  GRU_WH_IDX
+
+#define POL_IDX (NUM_MLP_LAYERS + 6)
+#define VAL_IDX (POL_IDX + 1)
+
+#define NUM_TOTAL_LAYERS (VAL_IDX + 1)
 
 /**
- * highest bids  xF
- * last count    x1
- * last face     x1
- * player # dice xP
- * # dice        x1
- * hand          xF
+ * self  (% of hand)  NUM_FACES
+ * self  (% of table) 1
+ * opp   (% of table) NUM_PLAYERS
+ * total (% of max)   1
  */
-#define NUM_INPUTS   (NUM_PLAYERS + 2 * NUM_FACES + 3)
-#define NUM_LAYERS   5
-#define SIZE_HIDDEN  128
-#define POL_HEAD_IDX (NUM_LAYERS - 2)
+#define SIZE_INPUT  (NUM_FACES + 1 + NUM_PLAYERS + 1)
+#define SIZE_HIDDEN 128
+#define SIZE_GRU    128
 /**
  * action space x5P*F
  * challenge    x1
  */
-#define SIZE_POL     (NUM_LEGAL_BIDS + 1)
-#define VAL_HEAD_IDX (NUM_LAYERS - 1)
+#define SIZE_POL      (NUM_TOTAL_DICE * NUM_FACES + 1)
+#define CHALLENGE_IDX SIZE_POL
 
 #define MAX_BATCH_SIZE 64
 
