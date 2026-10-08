@@ -1,8 +1,5 @@
 #include "tensor.h"
-#include <float.h>
-#include <math.h>
 #include <stdlib.h>
-#include <string.h>
 
 typedef struct Tensor T;
 
@@ -67,6 +64,7 @@ void tensor_gru(const T *in, const T *h_prev, const T *wr, const T *ur,
                 const T *br, T *r, const T *wz, const T *uz, const T *bz, T *z,
                 const T *wh, const T *uh, const T *bh, T *h_temp, T *h)
 {
+  // TODO: benchmark potential optimizations
   /**
    * r  =  sig(XWr + HpUr       + Br)
    * z  =  sig(XWz + HpUz       + Bz)
@@ -124,6 +122,7 @@ void tensor_gru(const T *in, const T *h_prev, const T *wr, const T *ur,
 void tensor_gru_grad(T *in, T *h_prev, T *wr, T *ur, T *br, T *r, T *wz, T *uz,
                      T *bz, T *z, T *wh, T *uh, T *bh, T *h_temp, const T *h)
 {
+  // TODO: benchmark potential optimizations
   /**
    * dL/dH' = dL/dH @ (1 - Z)
    *

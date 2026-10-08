@@ -1,15 +1,13 @@
-#include "network.h"
 #include "play.h"
 #include "train.h"
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 int main(int argc, char *argv[])
 {
   srand(time(NULL));
+
+  int exit = 1;
 
   char  *weights_fn  = "weights.bin";
   size_t max_iters   = 10000;
@@ -64,18 +62,17 @@ int main(int argc, char *argv[])
   } else if (playout_n) {
     if (playout(n, false, verbose) != 0) goto fail;
   } else if (playout_p) {
-    if (playout(n, true, true) != 0) goto fail;
+    if (playout(n, true, verbose) != 0) goto fail;
   } else {
     if (train(n, weights_fn, max_iters, max_steps, max_epchs, alpha, beta,
               gamma, epsilon, lambda, c1, c2, verbose) != 0)
       goto fail;
   }
 
-  network_free(n);
-  return 0;
+  exit = 0;
 
 fail:
   network_free(n);
 fail_n:
-  return 1;
+  return exit;
 }

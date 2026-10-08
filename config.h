@@ -1,10 +1,21 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/* --- game --- */
+
 #define NUM_DICE_PER_PLAYER 5
 #define NUM_FACES           6
 #define NUM_PLAYERS         4
 #define NUM_TOTAL_DICE      (NUM_DICE_PER_PLAYER * NUM_PLAYERS)
+
+/* --- reward shaping --- */
+
+#define R_CHALLENGE_GOOD  0.5f
+#define R_CHALLENGE_BAD   -0.5f
+#define R_CHALLENGED_GOOD -0.5f
+#define R_CHALLENGED_BAD  0.5f
+#define R_WIN             1.0f
+#define R_LOSS            -1.0f
 
 /* --- network --- */
 
@@ -24,9 +35,9 @@
 #define GRU_WH_IDX (GRU_UZ_IDX + 1) // 4
 #define GRU_UH_IDX (GRU_WH_IDX + 1) // 5
 
-#define GRU_BR_IDX GRU_WR_IDX       // 0
-#define GRU_BZ_IDX GRU_WZ_IDX       // 2
-#define GRU_BH_IDX GRU_WH_IDX       // 4
+#define GRU_BR_IDX GRU_WR_IDX // 0
+#define GRU_BZ_IDX GRU_WZ_IDX // 2
+#define GRU_BH_IDX GRU_WH_IDX // 4
 
 #define GRU_R_IDX  GRU_WR_IDX       // 0
 #define GRU_Z_IDX  GRU_WZ_IDX       // 2

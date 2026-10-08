@@ -1,10 +1,7 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
-#include "config.h"
 #include "game.h"
-#include "tensor.h"
-#include <stdbool.h>
 
 struct Network;
 

@@ -4,7 +4,6 @@
 #include "config.h"
 #include "tensor.h"
 #include <stdbool.h>
-#include <stddef.h>
 
 struct Game {
   size_t player_counts[NUM_PLAYERS][NUM_FACES];

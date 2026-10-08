@@ -1,8 +1,4 @@
 #include "network.h"
-#include "config.h"
-#include "tensor.h"
-#include <float.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,8 +61,12 @@ struct Network *network_new(void)
       goto fail_l;
 
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++) {
-    struct Tensor *k     = &n->ks[i];
-    float          limit = sqrtf(6.0f / k->y);
+    struct Tensor *k = &n->ks[i];
+    /** 
+     * uniform Kaiming for ReLU
+     * Xavier for sigmoid, tanh
+     */
+    float limit = sqrtf(6.0f / (k->y + (i < NUM_MLP_LAYERS ? 0.0f : k->x)));
 
     for (size_t j = 0; j < tensor_size(k); j++)
       k->buf[j] = (2.0f * (float)rand() / RAND_MAX - 1.0f) * limit;
@@ -210,18 +210,18 @@ void network_peek(const struct Network *n, const struct Game *g,
                                : 1);
 
   get_canonical(g, &inputs);
-  float val;
   network_forward(n, &inputs, hp, g, activs);
 
-  float *pol     = activs[0].buf;
-  float  min_val = FLT_MAX, max_val = -FLT_MAX;
+  float *pol     = activs[POL_IDX].buf;
+  float  min_pol = FLT_MAX, max_pol = -FLT_MAX;
   for (size_t i = 0; i < SIZE_POL; i++) {
-    if (pol[i] < min_val) min_val = pol[i];
-    if (pol[i] > max_val) max_val = pol[i];
+    if (pol[i] < min_pol) min_pol = pol[i];
+    if (pol[i] > max_pol) max_pol = pol[i];
   }
+  float val = activs[VAL_IDX].buf[0];
 
   printf("%sNetwork Peek:%s  est.v: %6.3f\n", BOLD, RESET, val);
-  float range = max_val - min_val;
+  float range = max_pol - min_pol;
   for (size_t c = 1; c <= NUM_TOTAL_DICE; c++) {
     printf("%s%2zu%s ", BOLD, c, RESET);
     for (size_t f = 1; f <= NUM_FACES; f++) {
@@ -229,7 +229,7 @@ void network_peek(const struct Network *n, const struct Game *g,
       float       p   = pol[idx];
       const char *color;
       if (range > 1e-8f) {
-        float norm = (p - min_val) / range;
+        float norm = (p - min_pol) / range;
         if (norm > 0.66f) color = GREEN;
         else if (norm > 0.33f) color = YELLOW;
         else if (norm >= 0.001f) color = RED;
@@ -244,7 +244,7 @@ void network_peek(const struct Network *n, const struct Game *g,
   printf("%sCH%s ", BOLD, RESET);
   float       cp = pol[CHALLENGE_IDX];
   const char *ccolor =
-      (range > 1e-8f && (cp - min_val) / range > 0.33f) ? GREEN : RESET;
+      (range > 1e-8f && (cp - min_pol) / range > 0.33f) ? GREEN : RESET;
   printf("%s%6.3f%s\n", ccolor, cp, RESET);
 
   tensor_free(&inputs);
@@ -281,7 +281,7 @@ int network_load(struct Network *n, const char *path)
 
 void network_benchmark(void)
 {
-  printf("Benchmarking (1000 iterations)...\n");
+  printf("Benchmarking (6000 iterations)...\n");
 
   struct Network *n = network_new();
   struct Game    *g = game_new();
@@ -314,7 +314,7 @@ void network_benchmark(void)
   }
 
   clock_t start = clock();
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 6000; i++) {
     network_forward(n, &inputs, &hp, g, activs);
     network_backward(n, &inputs, &hp, activs, &loss_p, loss_v);
   }
@@ -322,8 +322,8 @@ void network_benchmark(void)
 
   double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
   printf("Time for 1000 Forward+Backward passes: %f seconds\n", time_spent);
-  printf("Average time per pass: %f ms\n", (time_spent / 1000.0) * 1000.0);
-  printf("Estimated Evals per Second: %.2f\n\n", 1000.0 / time_spent);
+  printf("Average time per pass: %f ms\n", (time_spent / 6000.0) * 6000.0);
+  printf("Estimated Evals per Second: %.2f\n\n", 6000.0 / time_spent);
 
   for (size_t i = 0; i < NUM_MLP_LAYERS; i++) tensor_free(&activs[i]);
   for (size_t i = GRU_WR_IDX; i <= GRU_H_IDX; i++) tensor_free(&activs[i]);

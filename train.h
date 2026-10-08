@@ -2,7 +2,6 @@
 #define TRAIN_H
 
 #include "network.h"
-#include <stdbool.h>
 #include <stdlib.h>
 
 int train(struct Network *n, const char *weights_fn, size_t max_iters,

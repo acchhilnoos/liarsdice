@@ -1,8 +1,5 @@
-#include "game.h"
 #include "network.h"
-#include "tensor.h"
 #include <assert.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 

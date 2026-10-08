@@ -4,7 +4,6 @@
 #include <float.h>
 #include <math.h>
 #include <stddef.h>
-#include <string.h>
 
 struct Tensor {
   float *buf, *grad;

@@ -33,7 +33,7 @@ test: game.o network.o tensor.o test.o
 
 clean:
 	@echo "Cleaning build artifacts..."
-	@rm -f $(OBJS) $(DEPS) $(TARGET)
+	@rm -f $(OBJS) $(DEPS) $(TARGET) test
 	@rm -rf *.dSYM
 	@echo "Clean complete"
 
