@@ -1,3 +1,5 @@
+#include "game.h"
+#include "network.h"
 #include "tensor.h"
 #include <assert.h>
 #include <math.h>
@@ -183,6 +185,172 @@ static void test_fc(void)
   tensor_free(&out);
 }
 
+static void test_gru(void)
+{
+  printf("test_gru...\n");
+  size_t size_h = 4, size_i = 3;
+
+  struct Tensor in, h_prev;
+  tensor_init(&in, 1, size_i);
+  tensor_init(&h_prev, 1, size_h);
+
+  struct Tensor wr, ur, br, wz, uz, bz, wh, uh, bh;
+  tensor_init(&wr, size_i, size_h);
+  tensor_init(&ur, size_h, size_h);
+  tensor_init(&br, 1, size_h);
+  tensor_init(&wz, size_i, size_h);
+  tensor_init(&uz, size_h, size_h);
+  tensor_init(&bz, 1, size_h);
+  tensor_init(&wh, size_i, size_h);
+  tensor_init(&uh, size_h, size_h);
+  tensor_init(&bh, 1, size_h);
+
+  struct Tensor r, z, h_temp, h;
+  tensor_init(&r, 1, size_h);
+  tensor_init(&z, 1, size_h);
+  tensor_init(&h_temp, 1, size_h);
+  tensor_init(&h, 1, size_h);
+
+  // Simple deterministic values
+  for (size_t i = 0; i < size_i; i++) in.buf[i] = (i + 1) * 0.1f;
+  for (size_t i = 0; i < size_h; i++) h_prev.buf[i] = (i + 1) * 0.05f;
+
+  for (size_t i = 0; i < size_i * size_h; i++) {
+    wr.buf[i] = (i + 1) * 0.01f;
+    wz.buf[i] = (i + 1) * 0.01f;
+    wh.buf[i] = (i + 1) * 0.01f;
+  }
+  for (size_t i = 0; i < size_h * size_h; i++) {
+    ur.buf[i] = (i + 1) * 0.01f;
+    uz.buf[i] = (i + 1) * 0.01f;
+    uh.buf[i] = (i + 1) * 0.01f;
+  }
+  for (size_t i = 0; i < size_h; i++) {
+    br.buf[i] = 0.0f;
+    bz.buf[i] = 0.0f;
+    bh.buf[i] = 0.0f;
+  }
+
+  tensor_gru(&in, &h_prev, &wr, &ur, &br, &r, &wz, &uz, &bz, &z, &wh, &uh, &bh,
+             &h_temp, &h);
+
+  // Just verify outputs are in valid ranges
+  for (size_t i = 0; i < size_h; i++) {
+    assert(r.buf[i] >= 0 && r.buf[i] <= 1);
+    assert(z.buf[i] >= 0 && z.buf[i] <= 1);
+    assert(h_temp.buf[i] >= -1 && h_temp.buf[i] <= 1);
+    assert(h.buf[i] >= -1 && h.buf[i] <= 1);
+  }
+  printf("  gru forward: OK\n");
+
+  // Test backward: set all output grads to 1
+  for (size_t i = 0; i < size_h; i++) { h.grad[i] = 1.0f; }
+  tensor_gru_grad(&in, &h_prev, &wr, &ur, &br, &r, &wz, &uz, &bz, &z, &wh, &uh,
+                  &bh, &h_temp, &h);
+
+  // Verify gradients are non-zero (at least some)
+  int has_grad = 0;
+  for (size_t i = 0; i < size_i; i++)
+    if (in.grad[i] != 0) has_grad = 1;
+  for (size_t i = 0; i < size_h; i++)
+    if (h_prev.grad[i] != 0) has_grad = 1;
+  assert(has_grad);
+  printf("  gru backward: OK\n");
+
+  tensor_free(&in);
+  tensor_free(&h_prev);
+  tensor_free(&wr);
+  tensor_free(&ur);
+  tensor_free(&br);
+  tensor_free(&wz);
+  tensor_free(&uz);
+  tensor_free(&bz);
+  tensor_free(&wh);
+  tensor_free(&uh);
+  tensor_free(&bh);
+  tensor_free(&r);
+  tensor_free(&z);
+  tensor_free(&h_temp);
+  tensor_free(&h);
+}
+
+static void test_network(void)
+{
+  printf("test_network...\n");
+
+  struct Network *n = network_new();
+  assert(n != NULL);
+
+  struct Game *g = game_new();
+  assert(g != NULL);
+
+  struct Tensor in, hp;
+  tensor_init(&in, 1, SIZE_INPUT);
+  tensor_init(&hp, 1, SIZE_GRU);
+
+  // Set deterministic input
+  for (size_t i = 0; i < SIZE_INPUT; i++) in.buf[i] = (i + 1) * 0.01f;
+  for (size_t i = 0; i < SIZE_GRU; i++) hp.buf[i] = (i + 1) * 0.005f;
+
+  struct Tensor activs[NUM_TOTAL_LAYERS];
+  // MLP layers: SIZE_HIDDEN
+  for (size_t i = 0; i < NUM_MLP_LAYERS; i++)
+    tensor_init(&activs[i], 1, SIZE_HIDDEN);
+  // GRU activations: SIZE_GRU
+  for (size_t i = GRU_WR_IDX; i <= GRU_H_IDX; i++)
+    tensor_init(&activs[i], 1, SIZE_GRU);
+  // VAL: 1, POL: SIZE_POL
+  tensor_init(&activs[VAL_IDX], 1, 1);
+  tensor_init(&activs[POL_IDX], 1, SIZE_POL);
+
+  network_forward(n, &in, &hp, g, activs);
+
+  // Check policy is valid probability distribution (masked entries are ~0)
+  float  sum   = 0;
+  size_t valid = 0;
+  for (size_t i = 0; i < SIZE_POL; i++) {
+    assert(activs[POL_IDX].buf[i] >= 0);
+    if (activs[POL_IDX].buf[i] > 1e-6f) {
+      sum += activs[POL_IDX].buf[i];
+      valid++;
+    }
+  }
+  printf("  policy sum (valid=%zu): %f\n", valid, sum);
+  assert(eq(sum, 1.0f));
+  printf("  network forward: OK\n");
+
+  // Test backward
+  struct Tensor loss_p;
+  tensor_init(&loss_p, 1, SIZE_POL);
+  for (size_t i = 0; i < SIZE_POL; i++) loss_p.buf[i] = (i + 1) * 0.01f;
+  float loss_v = 0.5f;
+
+  network_backward(n, &in, &hp, activs, &loss_p, loss_v);
+
+  // Check gradients exist via input/activations
+  int has_grad = 0;
+  for (size_t i = 0; i < SIZE_INPUT; i++)
+    if (in.grad[i] != 0) has_grad = 1;
+  for (size_t i = 0; i < SIZE_GRU; i++)
+    if (hp.grad[i] != 0) has_grad = 1;
+  assert(has_grad);
+  printf("  network backward: OK\n");
+
+  // Test SGD step
+  network_sgd(n, 0.01f, 0.9f);
+  printf("  network sgd: OK\n");
+
+  for (size_t i = 0; i < NUM_MLP_LAYERS; i++) tensor_free(&activs[i]);
+  for (size_t i = GRU_WR_IDX; i <= GRU_H_IDX; i++) tensor_free(&activs[i]);
+  tensor_free(&activs[VAL_IDX]);
+  tensor_free(&activs[POL_IDX]);
+  tensor_free(&loss_p);
+  tensor_free(&in);
+  tensor_free(&hp);
+  network_free(n);
+  free(g);
+}
+
 int main(void)
 {
   test_init_free();
@@ -192,6 +360,8 @@ int main(void)
   test_tanh();
   test_softmax();
   test_fc();
+  test_gru();
+  test_network();
   printf("\nAll tests passed.\n");
   return 0;
 }

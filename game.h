@@ -20,7 +20,6 @@ struct Game {
 struct Game *game_new(void);
 void         game_restart(struct Game *g);
 
-/** 1-indexed legal bet check */
 bool legal(const struct Game *g, size_t count, size_t face);
 
 void bid(struct Game *g, size_t count, size_t face);

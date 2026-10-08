@@ -5,12 +5,12 @@ SRCS := game.c main.c network.c play.c tensor.c train.c
 OBJS := $(SRCS:.c=.o)
 DEPS := $(SRCS:.c=.d)
 
-CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -mavx2 -mfma
+CFLAGS := -std=c11 -Wall -Wextra -Wpedantic
 
-all: CFLAGS += -O3 -lm
+all: CFLAGS += -O3 -march=native -ffast-math
 all: $(TARGET)
 
-debug: CFLAGS += -O0 -g -fsanitize=address -lm
+debug: CFLAGS += -O0 -g -fsanitize=address
 debug: $(TARGET)
 
 $(TARGET): $(OBJS)
@@ -25,8 +25,8 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	./$(TARGET)
 
-test: CFLAGS += -O3 -lm
-test: tensor.o test.o
+test: CFLAGS += -O3
+test: game.o network.o tensor.o test.o
 	@echo "Linking $@..."
 	@$(CC) $(CFLAGS) -o $@ $^ 2>> /dev/null
 	@rm -f test.o
