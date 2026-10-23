@@ -1,4 +1,5 @@
 #include "network.h"
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,7 @@ struct Network {
   struct Tensor m_ks[NUM_TOTAL_LAYERS];
   struct Tensor bs[NUM_TOTAL_LAYERS];
   struct Tensor m_bs[NUM_TOTAL_LAYERS];
+  float        *scratch;
 };
 
 static inline int layer_init(struct Network *n, size_t i, size_t y, size_t x)
@@ -60,9 +62,16 @@ struct Network *network_new(void)
                                   : 1) != 0)
       goto fail_l;
 
+  size_t m = SIZE_INPUT;
+  if (SIZE_HIDDEN > m) m = SIZE_HIDDEN;
+  if (SIZE_GRU > m) m = SIZE_GRU;
+  if (SIZE_POL > m) m = SIZE_POL;
+  n->scratch = calloc(m * m, sizeof(*n->scratch));
+  if (!n->scratch) goto fail_s;
+
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++) {
     struct Tensor *k = &n->ks[i];
-    /** 
+    /**
      * uniform Kaiming for ReLU
      * Xavier for sigmoid, tanh
      */
@@ -74,6 +83,13 @@ struct Network *network_new(void)
 
   return n;
 
+fail_s:
+  for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++) {
+    tensor_free(&n->ks[i]);
+    tensor_free(&n->bs[i]);
+    tensor_free(&n->m_ks[i]);
+    tensor_free(&n->m_bs[i]);
+  }
 fail_l:
   free(n);
 fail_n:
@@ -82,6 +98,7 @@ fail_n:
 
 void network_free(struct Network *n)
 {
+  free(n->scratch);
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++) {
     tensor_free(&n->ks[i]);
     tensor_free(&n->bs[i]);
@@ -115,7 +132,8 @@ void network_forward(const struct Network *n, const struct Tensor *in,
              &n->ks[GRU_UR_IDX], &n->bs[GRU_BR_IDX], &activs[GRU_R_IDX],
              &n->ks[GRU_WZ_IDX], &n->ks[GRU_UZ_IDX], &n->bs[GRU_BZ_IDX],
              &activs[GRU_Z_IDX], &n->ks[GRU_WH_IDX], &n->ks[GRU_UH_IDX],
-             &n->bs[GRU_BH_IDX], &activs[GRU_HT_IDX], &activs[GRU_H_IDX]);
+             &n->bs[GRU_BH_IDX], n->scratch, &activs[GRU_HT_IDX],
+             &activs[GRU_H_IDX]);
 
   tensor_fc(&activs[GRU_H_IDX], &n->ks[POL_IDX], &n->bs[POL_IDX],
             &activs[POL_IDX]);
@@ -281,7 +299,7 @@ int network_load(struct Network *n, const char *path)
 
 void network_benchmark(void)
 {
-  printf("Benchmarking (6000 iterations)...\n");
+  printf("Benchmarking (9000 iterations)...\n");
 
   struct Network *n = network_new();
   struct Game    *g = game_new();
@@ -308,22 +326,22 @@ void network_benchmark(void)
   tensor_init(&activs[VAL_IDX], 1, 1);
   tensor_init(&activs[POL_IDX], 1, SIZE_POL);
 
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 1000; i++) {
     network_forward(n, &inputs, &hp, g, activs);
     network_backward(n, &inputs, &hp, activs, &loss_p, loss_v);
   }
 
   clock_t start = clock();
-  for (int i = 0; i < 6000; i++) {
+  for (int i = 0; i < 9000; i++) {
     network_forward(n, &inputs, &hp, g, activs);
     network_backward(n, &inputs, &hp, activs, &loss_p, loss_v);
   }
   clock_t end = clock();
 
   double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
-  printf("Time for 1000 Forward+Backward passes: %f seconds\n", time_spent);
-  printf("Average time per pass: %f ms\n", (time_spent / 6000.0) * 6000.0);
-  printf("Estimated Evals per Second: %.2f\n\n", 6000.0 / time_spent);
+  printf("Time for 9000 Forward+Backward passes: %f seconds\n", time_spent);
+  printf("Average time per pass: %f ms\n", (time_spent / 9000.0) * 9000.0);
+  printf("Estimated Evals per Second: %.2f\n\n", 9000.0 / time_spent);
 
   for (size_t i = 0; i < NUM_MLP_LAYERS; i++) tensor_free(&activs[i]);
   for (size_t i = GRU_WR_IDX; i <= GRU_H_IDX; i++) tensor_free(&activs[i]);

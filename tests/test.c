@@ -148,6 +148,7 @@ static void test_fc(void)
   tensor_init(&k, 2, 3);
   tensor_init(&bias, 1, 3);
   tensor_init(&out, 1, 3);
+  float *scratch = calloc(2, sizeof(*scratch));
 
   float inv[2]   = {1, 2};
   float kv[6]    = {1, 2, 3, 4, 5, 6};
@@ -164,7 +165,7 @@ static void test_fc(void)
   check_buf("fc", &out, exp, 3);
 
   for (int i = 0; i < 3; i++) out.grad[i] = 1;
-  tensor_fc_grad(&in, &k, &bias, &out);
+  tensor_fc_grad(&in, &k, &bias, scratch, &out);
 
   float in_grad_exp[2] = {kv[0] + kv[1] + kv[2], kv[3] + kv[4] + kv[5]};
   check_grad("fc in", &in, in_grad_exp, 2);
@@ -176,6 +177,7 @@ static void test_fc(void)
   float bias_grad_exp[3] = {1, 1, 1};
   check_grad("fc bias", &bias, bias_grad_exp, 3);
 
+  free(scratch);
   tensor_free(&in);
   tensor_free(&k);
   tensor_free(&bias);

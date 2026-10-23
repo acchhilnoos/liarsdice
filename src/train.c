@@ -1,4 +1,5 @@
 #include "train.h"
+#include "game.h"
 #include "play.h"
 #include <stdio.h>
 #include <string.h>
@@ -105,17 +106,17 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
       }
 
       if (a == CHALLENGE_IDX) {
-        if (g->p == 0) {
-          step_buf[step_n].rwd =
-              challenge(g) ? R_CHALLENGE_GOOD : R_CHALLENGE_BAD;
-          step_buf[step_n].terminal = true;
-        } else if (g->last.p == 0) {
-          step_buf[step_n - 1].rwd =
-              challenge(g) ? R_CHALLENGED_GOOD : R_CHALLENGED_BAD;
-          step_buf[step_n - 1].terminal = true;
-        } else {
-          challenge(g);
-          step_buf[step_n - 1].terminal = true;
+        if (step_n == 0) challenge(g);
+        else {
+          struct Step *step = &step_buf[step_n - 1];
+          bool         good = challenge(g);
+
+          if (g->p == 0) {
+            step->rwd = good ? R_CHALLENGE_GOOD : R_CHALLENGE_BAD;
+          } else if (g->last.p == 0)
+            step->rwd = good ? R_CHALLENGED_GOOD : R_CHALLENGED_BAD;
+
+          step->terminal = true;
         }
         for (size_t i = 0; i < NUM_PLAYERS; i++) tensor_zero(hidden + i);
       } else bid(g, (a / NUM_FACES) + 1, (a % NUM_FACES) + 1);

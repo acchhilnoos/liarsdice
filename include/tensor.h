@@ -4,30 +4,28 @@
 #include <float.h>
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
 struct Tensor {
   float *buf, *grad;
   size_t y, x;
 };
 
-static inline size_t tensor_size(const struct Tensor *t)
-{ return (t->y * t->x); }
-static inline void tensor_zero(struct Tensor *t)
-{
-  for (size_t i = 0; i < tensor_size(t); i++) t->buf[i] = 0;
-}
-static inline void tensor_zero_grad(struct Tensor *t)
-{
-  for (size_t i = 0; i < tensor_size(t); i++) t->grad[i] = 0;
-}
-
 int  tensor_init(struct Tensor *t, size_t y, size_t x);
 void tensor_free(struct Tensor *t);
+
+static inline size_t tensor_size(const struct Tensor *t) { return t->y * t->x; }
+
+static inline void tensor_zero(struct Tensor *t)
+{ memset(t->buf, 0, tensor_size(t) * sizeof(*t->buf)); }
+
+static inline void tensor_zero_grad(struct Tensor *t)
+{ memset(t->grad, 0, tensor_size(t) * sizeof(*t->grad)); }
 
 static inline void tensor_relu(struct Tensor *t)
 {
   for (size_t i = 0; i < tensor_size(t); i++)
-    if (t->buf[i] < 0) t->buf[i] = 0;
+    if (t->buf[i] < 0.0f) t->buf[i] = 0.0f;
 }
 static inline void tensor_relu_grad(struct Tensor *t)
 {
@@ -75,9 +73,9 @@ static inline void tensor_add_grad(struct Tensor *src, const struct Tensor *dst)
   for (size_t i = 0; i < tensor_size(dst); i++) src->grad[i] += dst->grad[i];
 }
 
-void tensor_fc(const struct Tensor *in, const struct Tensor *k,
+void tensor_fc(const struct Tensor *in, const struct Tensor *w,
                const struct Tensor *bias, struct Tensor *out);
-void tensor_fc_grad(struct Tensor *in, struct Tensor *k, struct Tensor *bias,
+void tensor_fc_grad(struct Tensor *in, struct Tensor *w, struct Tensor *bias,
                     const struct Tensor *out);
 
 void tensor_gru(const struct Tensor *in, const struct Tensor *h_prev,
@@ -86,7 +84,7 @@ void tensor_gru(const struct Tensor *in, const struct Tensor *h_prev,
                 const struct Tensor *wz, const struct Tensor *uz,
                 const struct Tensor *bz, struct Tensor *z,
                 const struct Tensor *wh, const struct Tensor *uh,
-                const struct Tensor *bh, struct Tensor *h_temp,
+                const struct Tensor *bh, float *scratch, struct Tensor *h_temp,
                 struct Tensor *h);
 void tensor_gru_grad(struct Tensor *in, struct Tensor *h_prev,
                      struct Tensor *wr, struct Tensor *ur, struct Tensor *br,
