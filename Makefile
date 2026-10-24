@@ -7,10 +7,10 @@ DEPS := $(SRCS:.c=.d)
 
 CFLAGS := -std=c11 -Wall -Wextra -Wpedantic
 
-all: CFLAGS += -O3 -march=native -ffast-math
+all: CFLAGS += -O3 -mavx2 -mfma -lm
 all: $(TARGET)
 
-debug: CFLAGS += -O0 -g -fsanitize=address
+debug: CFLAGS += -O0 -g -mavx2 -mfma -lm
 debug: $(TARGET)
 
 $(TARGET): $(OBJS)
@@ -25,7 +25,7 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	./$(TARGET)
 
-test: CFLAGS += -O3
+test: CFLAGS += -O3 -mavx2 -mfma -lm
 test: game.o network.o tensor.o test.o
 	@echo "Linking $@..."
 	@$(CC) $(CFLAGS) -o $@ $^ 2>> /dev/null

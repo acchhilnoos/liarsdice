@@ -1,3 +1,4 @@
+#include "config.h"
 #include "network.h"
 #include <assert.h>
 #include <stdio.h>
@@ -283,19 +284,16 @@ static void test_network(void)
 
   struct Tensor in, hp;
   tensor_init(&in, 1, SIZE_INPUT);
-  tensor_init(&hp, 1, SIZE_GRU);
+  tensor_init(&hp, 1, SIZE_HIDDEN);
 
   // Set deterministic input
   for (size_t i = 0; i < SIZE_INPUT; i++) in.buf[i] = (i + 1) * 0.01f;
-  for (size_t i = 0; i < SIZE_GRU; i++) hp.buf[i] = (i + 1) * 0.005f;
+  for (size_t i = 0; i < SIZE_HIDDEN; i++) hp.buf[i] = (i + 1) * 0.005f;
 
   struct Tensor activs[NUM_TOTAL_LAYERS];
-  // MLP layers: SIZE_HIDDEN
-  for (size_t i = 0; i < NUM_MLP_LAYERS; i++)
+  // MLP, GRU layers: SIZE_HIDDEN
+  for (size_t i = 0; i < POL_IDX; i++)
     tensor_init(&activs[i], 1, SIZE_HIDDEN);
-  // GRU activations: SIZE_GRU
-  for (size_t i = GRU_WR_IDX; i <= GRU_H_IDX; i++)
-    tensor_init(&activs[i], 1, SIZE_GRU);
   // VAL: 1, POL: SIZE_POL
   tensor_init(&activs[VAL_IDX], 1, 1);
   tensor_init(&activs[POL_IDX], 1, SIZE_POL);
@@ -328,7 +326,7 @@ static void test_network(void)
   int has_grad = 0;
   for (size_t i = 0; i < SIZE_INPUT; i++)
     if (in.grad[i] != 0) has_grad = 1;
-  for (size_t i = 0; i < SIZE_GRU; i++)
+  for (size_t i = 0; i < SIZE_HIDDEN; i++)
     if (hp.grad[i] != 0) has_grad = 1;
   assert(has_grad);
   printf("  network backward: OK\n");

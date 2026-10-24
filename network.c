@@ -1,4 +1,5 @@
 #include "network.h"
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,26 +44,21 @@ struct Network *network_new(void)
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++)
     if (layer_init(n, i,
                    /**
-                    * i                 y        x
-                    * 0                 n_in     s_hidden
-                    * [1, i_gru-1]      s_hidden s_hidden
-                    * i_gru             s_hidden s_gru
-                    * [i_gru+1,i_pol-1] s_gru    s_gru
-                    * i_pol             s_gru    s_pol
-                    * i_val             s_gru    1
+                    * i            y        x
+                    * 0            n_in     s_hidden
+                    * [1, i_pol-1] s_hidden s_hidden
+                    * i_pol        s_hidden s_pol
+                    * i_val        s_hidden 1
                     */
-                   i == 0            ? SIZE_INPUT
-                   : i <= GRU_WR_IDX ? SIZE_HIDDEN
-                                     : SIZE_GRU,
-                   i < GRU_WR_IDX ? SIZE_HIDDEN
-                   : i < POL_IDX  ? SIZE_GRU
-                   : i < VAL_IDX  ? SIZE_POL
-                                  : 1) != 0)
+                   i == 0 ? SIZE_INPUT : SIZE_HIDDEN,
+                   i < POL_IDX   ? SIZE_HIDDEN
+                   : i < VAL_IDX ? SIZE_POL
+                                 : 1) != 0)
       goto fail_l;
 
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++) {
     struct Tensor *k = &n->ks[i];
-    /** 
+    /**
      * uniform Kaiming for ReLU
      * Xavier for sigmoid, tanh
      */
@@ -204,10 +200,9 @@ void network_peek(const struct Network *n, const struct Game *g,
   tensor_init(&inputs, 1, SIZE_INPUT);
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++)
     tensor_init(activs + i, 1,
-                i < GRU_WR_IDX ? SIZE_HIDDEN
-                : i < POL_IDX  ? SIZE_GRU
-                : i < VAL_IDX  ? SIZE_POL
-                               : 1);
+                i < POL_IDX   ? SIZE_HIDDEN
+                : i < VAL_IDX ? SIZE_POL
+                              : 1);
 
   get_canonical(g, &inputs);
   network_forward(n, &inputs, hp, g, activs);
@@ -290,10 +285,10 @@ void network_benchmark(void)
   float         loss_v;
   tensor_init(&inputs, 1, SIZE_INPUT);
   tensor_init(&loss_p, 1, SIZE_POL);
-  tensor_init(&hp, 1, SIZE_GRU);
+  tensor_init(&hp, 1, SIZE_HIDDEN);
 
   for (size_t i = 0; i < SIZE_INPUT; i++) inputs.buf[i] = (i + 1) * 0.01f;
-  for (size_t i = 0; i < SIZE_GRU; i++) hp.buf[i] = (i + 1) * 0.005f;
+  for (size_t i = 0; i < SIZE_HIDDEN; i++) hp.buf[i] = (i + 1) * 0.005f;
 
   get_canonical(g, &inputs);
   loss_v = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
@@ -301,10 +296,7 @@ void network_benchmark(void)
     loss_p.buf[i] = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
 
   struct Tensor activs[NUM_TOTAL_LAYERS];
-  for (size_t i = 0; i < NUM_MLP_LAYERS; i++)
-    tensor_init(&activs[i], 1, SIZE_HIDDEN);
-  for (size_t i = GRU_WR_IDX; i <= GRU_H_IDX; i++)
-    tensor_init(&activs[i], 1, SIZE_GRU);
+  for (size_t i = 0; i < POL_IDX; i++) tensor_init(&activs[i], 1, SIZE_HIDDEN);
   tensor_init(&activs[VAL_IDX], 1, 1);
   tensor_init(&activs[POL_IDX], 1, SIZE_POL);
 
