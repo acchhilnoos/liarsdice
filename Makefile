@@ -1,40 +1,44 @@
 CC := gcc
+CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Iinclude
+
+SRCDIR  := src
+OBJDIR  := build
+TESTDIR := tests
+
+SRCS := $(wildcard $(SRCDIR)/*.c)
+OBJS := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SRCS))
+
 TARGET := main
 
-SRCS := game.c main.c network.c play.c tensor.c train.c
-OBJS := $(SRCS:.c=.o)
-DEPS := $(SRCS:.c=.d)
-
-CFLAGS := -std=c11 -Wall -Wextra -Wpedantic
-
-all: CFLAGS += -O3 -mavx2 -mfma -lm
+all: CFLAGS += -O3 -mavx2 -mfma
 all: $(TARGET)
 
-debug: CFLAGS += -O0 -g -mavx2 -mfma -lm
+debug: CFLAGS += -O0 -g -mavx2 -mfma 
 debug: $(TARGET)
+
+test: CFLAGS += -O3 -mavx2 -mfma 
+test: $(OBJDIR)/game.o $(OBJDIR)/network.o $(OBJDIR)/tensor.o $(OBJDIR)/test.o
+	@echo "Linking $@..."
+	@$(CC) $^ -o $@ -lm
 
 $(TARGET): $(OBJS)
 	@echo "Linking $@..."
-	@$(CC) $(CFLAGS) -o $@ $^
-	@echo "Build complete: $@"
+	@$(CC) $^ -o $@ -lm
+	@echo "Done."
 
-%.o: %.c
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
 	@echo "Compiling $<..."
 	@$(CC) $(CFLAGS) -c $< -o $@
 
-run: $(TARGET)
-	./$(TARGET)
+$(OBJDIR)/test.o: $(TESTDIR)/test.c | $(OBJDIR)
+	@echo "Compiling $<..."
+	@$(CC) $(CFLAGS) -c $< -o $@
 
-test: CFLAGS += -O3 -mavx2 -mfma -lm
-test: game.o network.o tensor.o test.o
-	@echo "Linking $@..."
-	@$(CC) $(CFLAGS) -o $@ $^ 2>> /dev/null
-	@rm -f test.o
+$(OBJDIR):
+	@mkdir $@
 
 clean:
-	@echo "Cleaning build artifacts..."
-	@rm -f $(OBJS) $(DEPS) $(TARGET) test
+	@rm -rf $(OBJDIR) $(TARGET)
 	@rm -rf *.dSYM
-	@echo "Clean complete"
 
-.PHONY: all clean debug run test
+.PHONY: all clean debug test
