@@ -25,10 +25,9 @@ int playout(struct Network *n, bool human, bool verbose)
 
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++)
     if (tensor_init(activs + i, 1,
-                    i < GRU_WR_IDX ? SIZE_HIDDEN
-                    : i < POL_IDX  ? SIZE_GRU
-                    : i < VAL_IDX  ? SIZE_POL
-                                   : 1) != 0)
+                    i < POL_IDX   ? SIZE_HIDDEN
+                    : i < VAL_IDX ? SIZE_POL
+                                  : 1) != 0)
       for (size_t j = 0; j < i; j++) {
         tensor_free(activs + j);
         goto fail_a;

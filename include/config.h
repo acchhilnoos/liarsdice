@@ -57,7 +57,6 @@
  */
 #define SIZE_INPUT  (NUM_FACES + 1 + NUM_PLAYERS + 1)
 #define SIZE_HIDDEN 128
-#define SIZE_GRU    128
 /**
  * action space x5P*F
  * challenge    x1

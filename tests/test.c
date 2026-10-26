@@ -1,3 +1,4 @@
+#include "config.h"
 #include "network.h"
 #include <assert.h>
 #include <stdio.h>
@@ -148,7 +149,6 @@ static void test_fc(void)
   tensor_init(&k, 2, 3);
   tensor_init(&bias, 1, 3);
   tensor_init(&out, 1, 3);
-  float *scratch = calloc(2, sizeof(*scratch));
 
   float inv[2]   = {1, 2};
   float kv[6]    = {1, 2, 3, 4, 5, 6};
@@ -165,7 +165,7 @@ static void test_fc(void)
   check_buf("fc", &out, exp, 3);
 
   for (int i = 0; i < 3; i++) out.grad[i] = 1;
-  tensor_fc_grad(&in, &k, &bias, scratch, &out);
+  tensor_fc_grad(&in, &k, &bias, &out);
 
   float in_grad_exp[2] = {kv[0] + kv[1] + kv[2], kv[3] + kv[4] + kv[5]};
   check_grad("fc in", &in, in_grad_exp, 2);
@@ -177,7 +177,6 @@ static void test_fc(void)
   float bias_grad_exp[3] = {1, 1, 1};
   check_grad("fc bias", &bias, bias_grad_exp, 3);
 
-  free(scratch);
   tensor_free(&in);
   tensor_free(&k);
   tensor_free(&bias);
@@ -285,19 +284,16 @@ static void test_network(void)
 
   struct Tensor in, hp;
   tensor_init(&in, 1, SIZE_INPUT);
-  tensor_init(&hp, 1, SIZE_GRU);
+  tensor_init(&hp, 1, SIZE_HIDDEN);
 
   // Set deterministic input
   for (size_t i = 0; i < SIZE_INPUT; i++) in.buf[i] = (i + 1) * 0.01f;
-  for (size_t i = 0; i < SIZE_GRU; i++) hp.buf[i] = (i + 1) * 0.005f;
+  for (size_t i = 0; i < SIZE_HIDDEN; i++) hp.buf[i] = (i + 1) * 0.005f;
 
   struct Tensor activs[NUM_TOTAL_LAYERS];
-  // MLP layers: SIZE_HIDDEN
-  for (size_t i = 0; i < NUM_MLP_LAYERS; i++)
+  // MLP, GRU layers: SIZE_HIDDEN
+  for (size_t i = 0; i < POL_IDX; i++)
     tensor_init(&activs[i], 1, SIZE_HIDDEN);
-  // GRU activations: SIZE_GRU
-  for (size_t i = GRU_WR_IDX; i <= GRU_H_IDX; i++)
-    tensor_init(&activs[i], 1, SIZE_GRU);
   // VAL: 1, POL: SIZE_POL
   tensor_init(&activs[VAL_IDX], 1, 1);
   tensor_init(&activs[POL_IDX], 1, SIZE_POL);
@@ -330,7 +326,7 @@ static void test_network(void)
   int has_grad = 0;
   for (size_t i = 0; i < SIZE_INPUT; i++)
     if (in.grad[i] != 0) has_grad = 1;
-  for (size_t i = 0; i < SIZE_GRU; i++)
+  for (size_t i = 0; i < SIZE_HIDDEN; i++)
     if (hp.grad[i] != 0) has_grad = 1;
   assert(has_grad);
   printf("  network backward: OK\n");

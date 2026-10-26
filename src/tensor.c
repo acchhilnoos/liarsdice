@@ -1,8 +1,10 @@
 #include "tensor.h"
-#include <arm_neon.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define _do_8(X)                                                               \
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#define _do_many(X)                                                            \
   X(0);                                                                        \
   X(1);                                                                        \
   X(2);                                                                        \
@@ -11,6 +13,14 @@
   X(5);                                                                        \
   X(6);                                                                        \
   X(7)
+#elif defined(__x86_64) || defined(__x86_64__)
+#include <immintrin.h>
+#define _do_many(X)                                                            \
+  X(0);                                                                        \
+  X(1);                                                                        \
+  X(2);                                                                        \
+  X(3);
+#endif
 
 typedef struct Tensor T;
 
@@ -41,63 +51,109 @@ void tensor_free(T *t)
   free(t->grad);
 }
 
-static void _matmul_add(read_only A, read_only B, writeable C, size_t b,
-                        size_t m, size_t n)
+static void _matmul_add_simd(read_only A, read_only B, writeable C, size_t b,
+                             size_t m, size_t n)
 {
-#define stride      32
+#define stride 32
+#if defined(__ARM_NEON)
 #define load_c(_x)  float32x4_t c_vec##_x = vld1q_f32(&C[i * n + k + _x * 4])
+#define load_a      float32x4_t a_vec = vdupq_n_f32(A[i * m + j])
 #define load_b(_x)  float32x4_t b_vec##_x = vld1q_f32(&B[j * n + k + _x * 4])
 #define fma(_x)     c_vec##_x = vfmaq_f32(c_vec##_x, a_vec, b_vec##_x)
 #define store_c(_x) vst1q_f32(&C[i * n + k + _x * 4], c_vec##_x)
+#elif defined(__x86_64) || defined(__x86_64__)
+#define load_c(_x)  __m256_u c_vec##_x = _mm256_loadu_ps(&C[i * n + k + _x * 4])
+#define load_a      __m256_u a_vec = _mm256_set1_ps(A[i * m + j])
+#define load_b(_x)  __m256_u b_vec##_x = _mm256_loadu_ps(&B[j * n + k + _x * 4])
+#define fma(_x)     c_vec##_x = _mm256_fmadd_ps(a_vec, b_vec##_x, c_vec##_x)
+#define store_c(_x) _mm256_storeu_ps(&C[i * n + k + _x * 4], c_vec##_x)
+#endif
   for (size_t i = 0; i < b; i++) {
     for (size_t k = 0; k + stride <= n; k += stride) {
-      _do_8(load_c);
+      _do_many(load_c);
 
       for (size_t j = 0; j < m; j++) {
-        float32x4_t a_vec = vdupq_n_f32(A[i * m + j]);
+        load_a;
 
-        _do_8(load_b);
-        _do_8(fma);
+        _do_many(load_b);
+        _do_many(fma);
       }
 
-      _do_8(store_c);
+      _do_many(store_c);
     }
 
     if (n & (stride - 1))
       for (size_t j = 0; j < m; j++)
-        for (size_t kk = (n & ~(stride - 1)); kk < n; kk++)
-          C[i * n + kk] += A[i * m + j] * B[j * n + kk];
+        for (size_t k = (n & ~(stride - 1)); k < n; k++)
+          C[i * n + k] += A[i * m + j] * B[j * n + k];
   }
 
 #undef store_c
 #undef fma
 #undef load_b
+#undef load_a
 #undef load_c
 #undef stride
+}
+
+static void _matmul_add(read_only A, read_only B, writeable C, size_t b,
+                        size_t m, size_t n)
+{
+#if defined(__ARM_NEON) || defined(__x86_64) || defined(__x86_64__)
+  _matmul_add_simd(A, B, C, b, m, n);
+#else
+  for (size_t i = 0; i < b; i++)
+    for (size_t j = 0; j < m; j++)
+      for (size_t k = 0; k < n; k++)
+        C[i * n + k] += A[i * m + j] * B[j * n + k];
+#endif
 }
 
 static void _matmul_add_bt(read_only A, read_only B, writeable C, size_t b,
                            size_t m, size_t n)
 {
-#define stride      32
+#define stride 32
+#if defined(__ARM_NEON)
 #define load_s(_x)  float32x4_t vec_s##_x = vdupq_n_f32(0.0f)
-#define load_og(_x) float32x4_t vec_a##_x = vld1q_f32(A + i * n + k + _x * 4)
-#define load_b(_x)  float32x4_t vec_b##_x = vld1q_f32(B + j * n + k + _x * 4)
+#define load_og(_x) float32x4_t vec_a##_x = vld1q_f32(&A[i * n + k + _x * 4])
+#define load_b(_x)  float32x4_t vec_b##_x = vld1q_f32(&B[j * n + k + _x * 4])
 #define fma(_x)     vec_s##_x = vfmaq_f32(vec_s##_x, vec_a##_x, vec_b##_x)
+#elif defined(__x86_64) || defined(__x86_64__)
+#define load_s(_x)  __m256_u vec_s##_x = _mm256_setzero_ps()
+#define load_og(_x) __m256_u vec_a##_x = _mm256_loadu_ps(&A[i * n + k + _x * 4])
+#define load_b(_x)  __m256_u vec_b##_x = _mm256_loadu_ps(&B[j * n + k + _x * 4])
+#define fma(_x)     vec_s##_x = _mm256_fmadd_ps(vec_a##_x, vec_b##_x, vec_s##_x)
+#endif
   for (size_t i = 0; i < b; i++) {
     for (size_t j = 0; j < m; j++) {
-      _do_8(load_s);
+      _do_many(load_s);
 
       for (size_t k = 0; k + stride <= n; k += stride) {
-        _do_8(load_og);
-        _do_8(load_b);
-        _do_8(fma);
+        _do_many(load_og);
+        _do_many(load_b);
+        _do_many(fma);
       }
 
+#if defined(__ARM_NEON)
       float32x4_t vec_s = vaddq_f32(
           vaddq_f32(vaddq_f32(vec_s0, vec_s1), vaddq_f32(vec_s2, vec_s3)),
           vaddq_f32(vaddq_f32(vec_s4, vec_s5), vaddq_f32(vec_s6, vec_s7)));
       float sum = vaddvq_f32(vec_s);
+#elif defined(__x86_64) || defined(__x86_64__)
+      // [ s0                      s1          s2    s3    s4 s5 s6 s7 ]
+      // [ s0+s4                   s1+s5       s2+s6 s3+s7 ]
+      // [ s0+s4+s2+s6             s1+s5+s3+s7 ...   ]
+      // [ s0+s4+s2+s6+s1+s5+s3+s7 ...         ]
+      __m256_u vec_s     = _mm256_add_ps(_mm256_add_ps(vec_s0, vec_s1),
+                                         _mm256_add_ps(vec_s2, vec_s3));
+      __m128   vec_s_128 = _mm_add_ps(_mm256_extractf128_ps(vec_s, 1),
+                                      _mm256_castps256_ps128(vec_s));
+      vec_s_128 = _mm_add_ps(vec_s_128, _mm_movehl_ps(vec_s_128, vec_s_128));
+      vec_s_128 =
+          _mm_add_ps(vec_s_128, _mm_shuffle_ps(vec_s_128, vec_s_128,
+                                               _MM_SHUFFLE(1, 1, 1, 1)));
+      float sum = _mm_cvtss_f32(vec_s_128);
+#endif
 
       if (n & (stride - 1))
         for (size_t k = n & ~(stride - 1); k < n; k++)
@@ -132,8 +188,7 @@ void tensor_fc_grad(T *in, T *w, T *bias, const T *out)
 
 void tensor_gru(const T *in, const T *h_prev, const T *wr, const T *ur,
                 const T *br, T *r, const T *wz, const T *uz, const T *bz, T *z,
-                const T *wh, const T *uh, const T *bh, float *scratch,
-                T *h_temp, T *h)
+                const T *wh, const T *uh, const T *bh, T *h_temp, T *h)
 {
   size_t    size_h = tensor_size(h);
   writeable H = h->buf, HT = h_temp->buf, R = r->buf, Z = z->buf;
@@ -164,12 +219,13 @@ void tensor_gru(const T *in, const T *h_prev, const T *wr, const T *ur,
   for (size_t i = 0; i < size_h; i++) Z[i] = 1.0f / (1.0f + expf(-Z[i]));
 
   // --- Ht ---
-  // (r @ Hp)
-  for (size_t i = 0; i < size_h; i++) scratch[i] = R[i] * HP[i];
   // XWh
   _matmul_add(X, WH, HT, 1, wh->y, wh->x);
   // (r @ Hp)Uh
-  _matmul_add(scratch, UH, HT, 1, uh->y, uh->x);
+  for (size_t j = 0; j < size_h; j++) {
+    float rhp_val = R[j] * HP[j];
+    for (size_t k = 0; k < size_h; k++) HT[k] += rhp_val * UH[j * size_h + k];
+  }
   // tanh
   for (size_t i = 0; i < size_h; i++) HT[i] = tanhf(HT[i]);
 

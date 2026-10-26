@@ -48,10 +48,9 @@ int train(struct Network *n, const char *weights_fn, size_t max_iters,
 
   for (size_t i = 0; i < NUM_TOTAL_LAYERS; i++)
     if (tensor_init(activs + i, 1,
-                    i < GRU_WR_IDX ? SIZE_HIDDEN
-                    : i < POL_IDX  ? SIZE_GRU
-                    : i < VAL_IDX  ? SIZE_POL
-                                   : 1) != 0) {
+                    i < POL_IDX   ? SIZE_HIDDEN
+                    : i < VAL_IDX ? SIZE_POL
+                                  : 1) != 0) {
       for (size_t j = 0; j < 1; j++) tensor_free(activs + j);
       goto fail_activs;
     }

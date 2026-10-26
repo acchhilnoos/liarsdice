@@ -84,7 +84,7 @@ void tensor_gru(const struct Tensor *in, const struct Tensor *h_prev,
                 const struct Tensor *wz, const struct Tensor *uz,
                 const struct Tensor *bz, struct Tensor *z,
                 const struct Tensor *wh, const struct Tensor *uh,
-                const struct Tensor *bh, float *scratch, struct Tensor *h_temp,
+                const struct Tensor *bh, struct Tensor *h_temp,
                 struct Tensor *h);
 void tensor_gru_grad(struct Tensor *in, struct Tensor *h_prev,
                      struct Tensor *wr, struct Tensor *ur, struct Tensor *br,
